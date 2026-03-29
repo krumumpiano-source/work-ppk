@@ -1,0 +1,6 @@
+uploads/
+__pycache__/
+*.pyc
+.env
+test_api.py
+คำสั่งตัวอย่าง/
