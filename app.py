@@ -12,6 +12,7 @@ from werkzeug.utils import secure_filename
 from parser.pdf_extractor import extract_text_from_pdf
 from parser.data_parser import parse_assignments
 from parser.workload_analyzer import analyze_workload_fairness
+from parser.scheduler import schedule_proctoring, schedule_assignment
 from staff_data import get_staff_dict, get_all_names, get_departments, STAFF_LIST
 
 app = Flask(__name__)
@@ -160,6 +161,8 @@ def analyze():
                 'order_subject': assignment.get('order_subject', ''),
                 'order_date': assignment.get('order_date', ''),
                 'duty_date': assignment.get('duty_date', ''),
+                'duty_time': assignment.get('duty_time', ''),
+                'duration_hours': assignment.get('duration_hours', 0),
                 'duty_section': assignment.get('duty_section', ''),
                 'source_file': assignment.get('source_file', ''),
             }
@@ -190,6 +193,10 @@ def analyze():
     never_assigned = [s for s in analysis['summary'] if s['assignment_count'] == 0]
     assigned = [s for s in analysis['summary'] if s['assignment_count'] > 0]
 
+    # Store for scheduler
+    global last_analysis_summary
+    last_analysis_summary = analysis['summary']
+
     return jsonify({
         'summary': analysis['summary'],
         'total_staff': len(analysis['summary']),
@@ -205,6 +212,34 @@ def analyze():
             sum(s['assignment_count'] for s in analysis['summary']) / max(len(analysis['summary']), 1), 1
         ),
     })
+
+
+# In-memory: store last analysis summary for scheduling
+last_analysis_summary = []
+
+
+@app.route('/api/schedule/proctor', methods=['POST'])
+def schedule_proctor():
+    """Generate a fair proctoring schedule."""
+    config = request.get_json()
+    if not config:
+        return jsonify({'error': 'ไม่พบข้อมูลการตั้งค่า'}), 400
+
+    result = schedule_proctoring(config, last_analysis_summary or None)
+    return jsonify(result)
+
+
+@app.route('/api/schedule/assign', methods=['POST'])
+def schedule_assign():
+    """Generate a fair general task assignment."""
+    config = request.get_json()
+    if not config:
+        return jsonify({'error': 'ไม่พบข้อมูลการตั้งค่า'}), 400
+
+    result = schedule_assignment(config, last_analysis_summary or None)
+    if 'error' in result:
+        return jsonify(result), 400
+    return jsonify(result)
 
 
 if __name__ == '__main__':

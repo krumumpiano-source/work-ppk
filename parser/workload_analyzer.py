@@ -71,10 +71,11 @@ THAI_MONTHS = {
 }
 
 
-def classify_task_type(order_subject, duty_section):
+def classify_task_type(order_subject, duty_section, duration_hours=0):
     """
     Classify a task based on order subject and duty section.
-    Returns (task_type, task_weight, role_type, role_weight, work_group).
+    Returns (task_type, task_weight, role_type, role_weight, work_group, duration_factor).
+    duration_hours: hours of duty parsed from PDF time range.
     """
     combined = f"{order_subject or ''} {duty_section or ''}".lower()
 
@@ -108,13 +109,22 @@ def classify_task_type(order_subject, duty_section):
         if work_group != 'อื่นๆ':
             break
 
+    # Duration factor: normalize to 3 hours as baseline (1.0x)
+    # 0 means no time info — use 1.0x default
+    if duration_hours > 0:
+        duration_factor = round(duration_hours / 3.0, 2)
+    else:
+        duration_factor = 1.0
+
     return {
         'task_type': task_type,
         'task_weight': task_weight,
         'role_type': role_type,
         'role_weight': role_weight,
         'work_group': work_group,
-        'weighted_score': round(task_weight * role_weight, 2),
+        'duration_hours': duration_hours,
+        'duration_factor': duration_factor,
+        'weighted_score': round(task_weight * role_weight * duration_factor, 2),
     }
 
 
@@ -469,7 +479,8 @@ def analyze_workload_fairness(summary_list, all_assignments):
         for a in assignments:
             classification = classify_task_type(
                 a.get('order_subject', ''),
-                a.get('duty_section', '')
+                a.get('duty_section', ''),
+                a.get('duration_hours', 0),
             )
             a['classification'] = classification
             total_ws += classification['weighted_score']

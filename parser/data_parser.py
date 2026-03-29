@@ -151,6 +151,34 @@ def extract_date_contexts(text):
     return dates
 
 
+def extract_time_contexts(text):
+    """Extract time range contexts (e.g. ภาคเช้า เวลา 08.00 น. – 12.00 น.)."""
+    contexts = []
+    # Pattern: (ภาคเช้า|ภาคบ่าย)? เวลา HH.MM น. – HH.MM น.
+    pattern = re.compile(
+        r'(ภาคเช้า|ภาคบ่าย)?\s*เวลา\s*(\d{1,2})[.:](\d{2})\s*น\.?\s*[-–]\s*(\d{1,2})[.:](\d{2})\s*น\.?',
+    )
+    for m in pattern.finditer(text):
+        period = m.group(1) or ''
+        h1, m1 = int(m.group(2)), int(m.group(3))
+        h2, m2 = int(m.group(4)), int(m.group(5))
+        start_min = h1 * 60 + m1
+        end_min = h2 * 60 + m2
+        duration = max(end_min - start_min, 0) / 60.0
+        time_str = f"{h1:02d}:{m1:02d}-{h2:02d}:{m2:02d}"
+        if period:
+            time_str = f"{period} {time_str}"
+        contexts.append({
+            'period': period,
+            'start_hour': h1, 'start_min': m1,
+            'end_hour': h2, 'end_min': m2,
+            'duration_hours': round(duration, 2),
+            'time_str': time_str,
+            'pos': m.start(),
+        })
+    return contexts
+
+
 def parse_assignments(text, source_file=""):
     """
     Main parsing function: extract all staff assignments from PDF text.
@@ -161,6 +189,7 @@ def parse_assignments(text, source_file=""):
 
     order_info = extract_order_info(text)
     date_contexts = extract_date_contexts(text)
+    time_contexts = extract_time_contexts(text)
 
     assignments = []
     found_names = set()
@@ -225,6 +254,14 @@ def parse_assignments(text, source_file=""):
                 if dc['pos'] <= pos:
                     duty_date = dc['full']
 
+            # Find closest time context
+            duty_time = ""
+            duration_hours = 0
+            for tc in time_contexts:
+                if tc['pos'] <= pos:
+                    duty_time = tc['time_str']
+                    duration_hours = tc['duration_hours']
+
             # Find section context (look backwards for section header)
             section = ""
             section_pattern = re.compile(
@@ -248,6 +285,8 @@ def parse_assignments(text, source_file=""):
                 'order_subject': order_info['order_subject'] or '',
                 'order_date': order_info['order_date'] or '',
                 'duty_date': duty_date,
+                'duty_time': duty_time,
+                'duration_hours': duration_hours,
                 'duty_section': section,
                 'source_file': source_file,
             })

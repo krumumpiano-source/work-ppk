@@ -4,3 +4,4 @@ __pycache__/
 .env
 test_api.py
 คำสั่งตัวอย่าง/
+*.bak

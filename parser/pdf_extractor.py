@@ -2,25 +2,13 @@
 """
 PDF text extraction module.
 Handles both text-based and garbled-font PDFs.
-Falls back to OCR (EasyOCR) when text extraction produces unreadable results.
+Falls back to OCR (Tesseract) when text extraction produces unreadable results.
 """
 
 import pdfplumber
 import fitz  # PyMuPDF
 import re
-import numpy as np
-
-# Lazy-loaded EasyOCR reader (singleton)
-_ocr_reader = None
-
-
-def _get_ocr_reader():
-    """Get or create EasyOCR reader (lazy initialization)."""
-    global _ocr_reader
-    if _ocr_reader is None:
-        import easyocr
-        _ocr_reader = easyocr.Reader(['th', 'en'], gpu=False)
-    return _ocr_reader
+import io
 
 
 def _check_readable(text):
@@ -43,26 +31,25 @@ def _extract_text_pdfplumber(filepath):
 
 
 def _extract_text_ocr(filepath):
-    """Extract text using OCR (for garbled-font or scanned PDFs)."""
-    reader = _get_ocr_reader()
-    pages_text = []
+    """Extract text using Tesseract OCR (for garbled-font or scanned PDFs)."""
+    import pytesseract
+    from PIL import Image
 
+    pages_text = []
     doc = fitz.open(filepath)
+
     for page_num in range(len(doc)):
         page = doc[page_num]
         # Render at 300 DPI for good OCR quality
         mat = fitz.Matrix(300 / 72, 300 / 72)
         pix = page.get_pixmap(matrix=mat)
 
-        # Convert pixmap to numpy array for EasyOCR
-        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
-        # If RGBA, convert to RGB
-        if pix.n == 4:
-            img = img[:, :, :3]
+        # Convert pixmap to PIL Image
+        img_data = pix.tobytes("png")
+        img = Image.open(io.BytesIO(img_data))
 
-        # Run OCR
-        results = reader.readtext(img, detail=0, paragraph=True)
-        page_text = "\n".join(results)
+        # Run Tesseract OCR with Thai + English
+        page_text = pytesseract.image_to_string(img, lang='tha+eng')
         pages_text.append(page_text)
 
     doc.close()

@@ -609,13 +609,17 @@ function showPerson(name) {
             html += `<div class="border rounded-lg p-3">
                 <div class="font-semibold text-blue-700 mb-1">📋 คำสั่งที่ ${orderNum}</div>
                 <div class="text-xs text-gray-500 mb-2">${group.subject || ''}</div>
-                <table class="w-full text-xs"><thead><tr class="text-gray-400"><th class="text-left py-1">วันที่</th><th class="text-left py-1">หน้าที่/ฝ่าย</th><th class="text-left py-1">น้ำหนัก</th><th class="text-left py-1">ไฟล์</th></tr></thead><tbody>
+                <table class="w-full text-xs"><thead><tr class="text-gray-400"><th class="text-left py-1">วันที่</th><th class="text-left py-1">เวลา</th><th class="text-left py-1">ชม.</th><th class="text-left py-1">หน้าที่/ฝ่าย</th><th class="text-left py-1">น้ำหนัก</th><th class="text-left py-1">ไฟล์</th></tr></thead><tbody>
                     ${group.entries.map(e => {
                         const cl = e.classification || {};
+                        const df = cl.duration_factor || 1;
+                        const dfLabel = df !== 1 ? ` (×${df})` : '';
                         return `<tr class="border-t">
                             <td class="py-1">${e.duty_date || '-'}</td>
+                            <td class="py-1">${e.duty_time || '-'}</td>
+                            <td class="py-1">${e.duration_hours ? e.duration_hours + ' ชม.' : '-'}</td>
                             <td class="py-1">${e.duty_section || '-'}</td>
-                            <td class="py-1 font-bold">${cl.weighted_score || '-'}</td>
+                            <td class="py-1 font-bold">${cl.weighted_score || '-'}${dfLabel}</td>
                             <td class="py-1 text-gray-400">${e.source_file || '-'}</td>
                         </tr>`;
                     }).join('')}
@@ -652,4 +656,268 @@ btnExport.addEventListener('click', () => {
 // ---- Init ----
 fetch('/api/staff').then(r => r.json()).then(d => {
     document.getElementById('staffCount').innerHTML = `<b>${d.total}</b> บุคลากร | <b>${d.departments.length}</b> กลุ่มสาระ`;
+    // Populate exclude dept dropdowns for scheduler
+    const deptOpts = '<option value="">ไม่ยกเว้น</option>' + d.departments.map(dep => `<option value="${dep}">${dep}</option>`).join('');
+    ['schedExcludeDept', 'assignExcludeDept'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = deptOpts;
+    });
 });
+
+// ===========================================
+// SCHEDULER — Sub-tab switching
+// ===========================================
+document.querySelectorAll('.sched-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.sched-tab-btn').forEach(b => { b.classList.remove('bg-blue-600', 'text-white'); b.classList.add('bg-gray-200', 'text-gray-700'); });
+        document.querySelectorAll('.sched-content').forEach(c => c.classList.add('hidden'));
+        btn.classList.remove('bg-gray-200', 'text-gray-700');
+        btn.classList.add('bg-blue-600', 'text-white');
+        document.getElementById('sched-' + btn.dataset.stab).classList.remove('hidden');
+    });
+});
+
+// ===========================================
+// SCHEDULER — Proctoring
+// ===========================================
+let proctorSessions = [];
+
+document.getElementById('btnAddSession').addEventListener('click', () => {
+    const date = document.getElementById('schedDate').value;
+    const period = document.getElementById('schedPeriod').value;
+    const startTime = document.getElementById('schedStartTime').value;
+    const endTime = document.getElementById('schedEndTime').value;
+    const roomsStr = document.getElementById('schedRooms').value.trim();
+    const excludeDept = document.getElementById('schedExcludeDept').value;
+
+    if (!date || !roomsStr) { alert('กรุณาระบุวันที่และห้องสอบ'); return; }
+
+    const rooms = roomsStr.split(',').map(r => r.trim()).filter(r => r);
+    proctorSessions.push({
+        date, period, start_time: startTime, end_time: endTime,
+        rooms, exclude_depts: excludeDept ? [excludeDept] : [],
+    });
+
+    renderSessionList();
+});
+
+function renderSessionList() {
+    const el = document.getElementById('sessionList');
+    const btn = document.getElementById('btnGenerateProctor');
+    if (!proctorSessions.length) { el.innerHTML = ''; btn.disabled = true; return; }
+    btn.disabled = false;
+
+    el.innerHTML = proctorSessions.map((s, i) => {
+        const excl = s.exclude_depts.length ? ` <span class="text-red-400">(ยกเว้น: ${s.exclude_depts.join(', ')})</span>` : '';
+        return `<div class="flex items-center justify-between bg-blue-50 rounded-lg px-4 py-2">
+            <span class="text-sm">📅 ${s.date} ${s.period} ${s.start_time}-${s.end_time} | ${s.rooms.length} ห้อง (${s.rooms.join(', ')})${excl}</span>
+            <button onclick="removeSession(${i})" class="text-red-400 hover:text-red-600">&times;</button>
+        </div>`;
+    }).join('');
+}
+
+function removeSession(i) { proctorSessions.splice(i, 1); renderSessionList(); }
+
+document.getElementById('btnClearSessions').addEventListener('click', () => {
+    proctorSessions = [];
+    renderSessionList();
+    document.getElementById('proctorResult').classList.add('hidden');
+});
+
+document.getElementById('btnGenerateProctor').addEventListener('click', async () => {
+    const btn = document.getElementById('btnGenerateProctor');
+    btn.disabled = true;
+    btn.textContent = '⏳ กำลังสร้าง...';
+
+    const config = {
+        exam_name: document.getElementById('schedExamName').value || 'สอบ',
+        proctors_per_room: parseInt(document.getElementById('schedProctorsPerRoom').value) || 2,
+        sessions: proctorSessions.map(s => ({
+            ...s,
+            proctors_per_room: parseInt(document.getElementById('schedProctorsPerRoom').value) || 2,
+        })),
+    };
+
+    try {
+        const res = await fetch('/api/schedule/proctor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config),
+        });
+        const data = await res.json();
+        renderProctorResult(data);
+    } catch (err) {
+        alert('เกิดข้อผิดพลาด: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📅 สร้างตารางคุมสอบ';
+    }
+});
+
+function renderProctorResult(data) {
+    const el = document.getElementById('proctorResult');
+    el.classList.remove('hidden');
+
+    const s = data.summary;
+    let html = `
+        <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+            <h3 class="font-bold text-green-800 text-lg mb-2">📅 ${data.exam_name}</h3>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                <div>รอบสอบ: <b>${s.total_sessions}</b></div>
+                <div>ห้องสอบ: <b>${s.total_rooms}</b></div>
+                <div>ตำแหน่งทั้งหมด: <b>${s.total_slots}</b></div>
+                <div>จัดได้: <b>${s.total_filled}</b> (${s.fill_rate}%)</div>
+                <div>ใช้บุคลากร: <b>${s.total_staff_used}</b> คน</div>
+            </div>
+            ${s.cross_group_note ? `<div class="mt-2 text-xs ${s.has_historical_data ? 'text-green-700 bg-green-100' : 'text-amber-700 bg-amber-100'} px-3 py-1.5 rounded">💡 ${s.cross_group_note}</div>` : ''}
+        </div>`;
+
+    // Department distribution
+    if (s.dept_distribution && Object.keys(s.dept_distribution).length) {
+        html += '<div class="mb-4"><h4 class="font-semibold text-sm mb-2">📊 การกระจายตามกลุ่มสาระ</h4><div class="flex flex-wrap gap-2">';
+        for (const [dept, count] of Object.entries(s.dept_distribution).sort((a,b) => b[1]-a[1])) {
+            html += `<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">${dept}: ${count}</span>`;
+        }
+        html += '</div></div>';
+    }
+
+    // Schedule tables per session
+    for (const session of data.schedule) {
+        html += `<div class="mb-4 border rounded-lg overflow-hidden">
+            <div class="bg-gray-100 px-4 py-2 font-semibold text-sm">
+                📅 ${session.date} ${session.period} (${session.start_time}-${session.end_time}) — ${session.duration_hours} ชม. | น้ำหนัก: ${session.session_weight}
+            </div>
+            <table class="w-full text-sm">
+                <thead><tr class="bg-gray-50 text-left">
+                    <th class="px-3 py-2">ห้องสอบ</th>
+                    <th class="px-3 py-2">กรรมการคุมสอบ</th>
+                </tr></thead><tbody>`;
+
+        for (const room of session.rooms) {
+            const proctorHtml = room.proctors.map(p => {
+                const badge = p.admin_role ? ` <span class="text-xs bg-amber-100 text-amber-800 px-1 rounded">${p.admin_role}</span>` : '';
+                const fatigueTag = p.fatigue_index > 30 ? ` <span class="text-xs text-red-500">⚠ F:${p.fatigue_index}</span>` : '';
+                return `<div class="py-0.5"><b>${p.name}</b>${badge}${fatigueTag} <span class="text-gray-400 text-xs">${p.department} | WS: ${p.cumulative_ws_before}→${p.cumulative_ws_after}</span></div>`;
+            }).join('');
+
+            const fillColor = room.proctors_assigned < room.proctors_needed ? 'bg-red-50' : '';
+            html += `<tr class="border-t ${fillColor}">
+                <td class="px-3 py-2 font-medium">${room.room_name}</td>
+                <td class="px-3 py-2">${proctorHtml || '<span class="text-red-400">ไม่สามารถจัดได้</span>'}</td>
+            </tr>`;
+        }
+
+        html += '</tbody></table></div>';
+    }
+
+    // Print button
+    html += '<button onclick="window.print()" class="bg-green-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 mt-2 no-print">🖨️ พิมพ์ตาราง</button>';
+
+    el.innerHTML = html;
+}
+
+// ===========================================
+// SCHEDULER — General Assignment
+// ===========================================
+document.getElementById('btnGenerateAssign').addEventListener('click', async () => {
+    const btn = document.getElementById('btnGenerateAssign');
+
+    const roles = {
+        'ประธาน': parseInt(document.getElementById('roleChair').value) || 0,
+        'รองประธาน': parseInt(document.getElementById('roleViceChair').value) || 0,
+        'เลขานุการ': parseInt(document.getElementById('roleSecretary').value) || 0,
+        'ผู้ช่วยเลขานุการ': parseInt(document.getElementById('roleAsstSec').value) || 0,
+        'กรรมการ': parseInt(document.getElementById('roleCommittee').value) || 0,
+    };
+    const totalRoles = Object.values(roles).reduce((a, b) => a + b, 0);
+    if (totalRoles <= 0) { alert('กรุณาระบุจำนวนบุคลากรอย่างน้อย 1 ตำแหน่ง'); return; }
+
+    btn.disabled = true;
+    btn.textContent = '⏳ กำลังสร้าง...';
+
+    const config = {
+        task_name: document.getElementById('assignTaskName').value || 'งาน',
+        task_type: document.getElementById('assignTaskType').value,
+        date: document.getElementById('assignDate').value,
+        start_time: document.getElementById('assignStartTime').value,
+        end_time: document.getElementById('assignEndTime').value,
+        exclude_depts: (() => { const v = document.getElementById('assignExcludeDept').value; return v ? [v] : []; })(),
+        roles,
+    };
+
+    try {
+        const res = await fetch('/api/schedule/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config),
+        });
+        const data = await res.json();
+        renderAssignResult(data);
+    } catch (err) {
+        alert('เกิดข้อผิดพลาด: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📋 สร้างตารางปฏิบัติงาน';
+    }
+});
+
+function renderAssignResult(data) {
+    const el = document.getElementById('assignResult');
+    el.classList.remove('hidden');
+
+    const s = data.summary;
+    let html = `
+        <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+            <h3 class="font-bold text-green-800 text-lg mb-2">📋 ${data.task_name}</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div>ประเภท: <b>${data.task_type}</b></div>
+                <div>วันที่: <b>${data.date || '-'}</b></div>
+                <div>เวลา: <b>${data.start_time}-${data.end_time}</b> (${data.duration_hours} ชม.)</div>
+                <div>จัดได้: <b>${s.total_assigned}/${s.total_requested}</b> คน</div>
+            </div>
+            ${s.cross_group_note ? `<div class="mt-2 text-xs ${s.has_historical_data ? 'text-green-700 bg-green-100' : 'text-amber-700 bg-amber-100'} px-3 py-1.5 rounded">💡 ${s.cross_group_note}</div>` : ''}
+        </div>`;
+
+    // Department distribution
+    if (s.dept_distribution && Object.keys(s.dept_distribution).length) {
+        html += '<div class="mb-4"><h4 class="font-semibold text-sm mb-2">📊 กระจายตามกลุ่มสาระ</h4><div class="flex flex-wrap gap-2">';
+        for (const [dept, count] of Object.entries(s.dept_distribution).sort((a,b) => b[1]-a[1])) {
+            html += `<span class="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">${dept}: ${count}</span>`;
+        }
+        html += '</div></div>';
+    }
+
+    // Assignment table grouped by role
+    const roleOrder = ['ประธาน', 'รองประธาน', 'เลขานุการ', 'ผู้ช่วยเลขานุการ', 'กรรมการ'];
+    html += '<table class="w-full text-sm border rounded-lg overflow-hidden"><thead><tr class="bg-gray-50">';
+    html += '<th class="px-3 py-2 text-left">#</th><th class="px-3 py-2 text-left">บทบาท</th><th class="px-3 py-2 text-left">ชื่อ-นามสกุล</th><th class="px-3 py-2 text-left">กลุ่มสาระ</th><th class="px-3 py-2 text-center">น้ำหนัก</th><th class="px-3 py-2 text-center">WS ก่อน→หลัง</th><th class="px-3 py-2 text-center">Fatigue</th>';
+    html += '</tr></thead><tbody>';
+
+    let row = 1;
+    for (const role of roleOrder) {
+        const people = data.assignments.filter(a => a.role === role);
+        if (!people.length) continue;
+
+        for (const p of people) {
+            const badge = p.admin_role ? ` <span class="text-xs bg-amber-100 text-amber-800 px-1 rounded">${p.admin_role}</span>` : '';
+            const roleColor = role === 'ประธาน' ? 'text-purple-700 font-bold' : role === 'เลขานุการ' ? 'text-blue-700 font-bold' : 'text-gray-600';
+            const fatigueColor = (p.fatigue_index || 0) > 30 ? 'text-red-600 font-bold' : 'text-gray-400';
+            html += `<tr class="border-t">
+                <td class="px-3 py-2 text-gray-400">${row++}</td>
+                <td class="px-3 py-2 ${roleColor}">${role}</td>
+                <td class="px-3 py-2"><b>${p.name}</b>${badge}</td>
+                <td class="px-3 py-2 text-gray-500 text-xs">${p.department}</td>
+                <td class="px-3 py-2 text-center">${p.assignment_score}</td>
+                <td class="px-3 py-2 text-center text-xs">${p.cumulative_ws_before} → ${p.cumulative_ws_after}</td>
+                <td class="px-3 py-2 text-center text-xs ${fatigueColor}">${p.fatigue_index || 0}</td>
+            </tr>`;
+        }
+    }
+
+    html += '</tbody></table>';
+
+    // Print button
+    html += '<button onclick="window.print()" class="bg-green-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 mt-4 no-print">🖨️ พิมพ์ตาราง</button>';
+
+    el.innerHTML = html;
+}

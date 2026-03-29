@@ -135,6 +135,7 @@
                     <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="never">🔴 ไม่เคยได้รับ</button>
                     <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="dept">🏫 กลุ่มสาระ</button>
                     <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="workgroup">🗂️ ฝ่ายงาน</button>
+                    <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="scheduler">📅 จัดตาราง</button>
                 </div>
 
                 <!-- Tab: Table -->
@@ -233,6 +234,161 @@
                 <!-- Tab: Workgroup -->
                 <div id="tab-workgroup" class="tab-content p-4 hidden">
                     <div id="workgroupStats"></div>
+                </div>
+
+                <!-- Tab: Scheduler -->
+                <div id="tab-scheduler" class="tab-content p-4 hidden">
+                    <div class="mb-4 bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-700">
+                        📅 <b>ระบบจัดตารางอัตโนมัติ</b> — จัดคนปฏิบัติงานอย่างเป็นธรรม โดยพิจารณา Weighted Score สะสมจาก PDF ที่อัปโหลด
+                        <span class="text-green-500">(อัปโหลด PDF ก่อนใช้งาน เพื่อให้ระบบรู้ภาระงานสะสมแต่ละคน)</span>
+                    </div>
+
+                    <!-- Sub-tabs -->
+                    <div class="flex gap-2 mb-4">
+                        <button class="sched-tab-btn px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white" data-stab="proctor">📝 จัดตารางคุมสอบ</button>
+                        <button class="sched-tab-btn px-4 py-2 rounded-lg text-sm font-semibold bg-gray-200 text-gray-700" data-stab="assign">📋 จัดตารางปฏิบัติงาน</button>
+                    </div>
+
+                    <!-- Proctor Form -->
+                    <div id="sched-proctor" class="sched-content">
+                        <div class="bg-white border rounded-lg p-4 mb-4">
+                            <h4 class="font-semibold mb-3">📝 ตั้งค่าการสอบ</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">ชื่อการสอบ</label>
+                                    <input type="text" id="schedExamName" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="เช่น สอบปลายภาค 2/2569" value="สอบปลายภาค">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">กรรมการต่อห้อง</label>
+                                    <input type="number" id="schedProctorsPerRoom" class="w-full border rounded-lg px-3 py-2 text-sm" value="2" min="1" max="5">
+                                </div>
+                            </div>
+
+                            <h4 class="font-semibold mb-2 text-sm text-gray-600">➕ เพิ่มรอบสอบ</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-6 gap-2 mb-3 items-end">
+                                <div>
+                                    <label class="block text-xs text-gray-500">วันที่</label>
+                                    <input type="date" id="schedDate" class="w-full border rounded-lg px-2 py-2 text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">ช่วงเวลา</label>
+                                    <select id="schedPeriod" class="w-full border rounded-lg px-2 py-2 text-sm">
+                                        <option value="ภาคเช้า">ภาคเช้า</option>
+                                        <option value="ภาคบ่าย">ภาคบ่าย</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">เวลาเริ่ม</label>
+                                    <input type="time" id="schedStartTime" class="w-full border rounded-lg px-2 py-2 text-sm" value="08:00">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">เวลาจบ</label>
+                                    <input type="time" id="schedEndTime" class="w-full border rounded-lg px-2 py-2 text-sm" value="12:00">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">ห้องสอบ (ชื่อ คั่นด้วย ,)</label>
+                                    <input type="text" id="schedRooms" class="w-full border rounded-lg px-2 py-2 text-sm" placeholder="411,412,413,414,415">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">กลุ่มสาระที่ไม่ร่วม</label>
+                                    <select id="schedExcludeDept" class="w-full border rounded-lg px-2 py-2 text-sm">
+                                        <option value="">ไม่ยกเว้น</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button id="btnAddSession" class="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-600">+ เพิ่มรอบสอบ</button>
+
+                            <div id="sessionList" class="mt-4 space-y-2"></div>
+
+                            <div class="mt-4 flex gap-3">
+                                <button id="btnGenerateProctor" class="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 text-sm" disabled>📅 สร้างตารางคุมสอบ</button>
+                                <button id="btnClearSessions" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-300">ล้าง</button>
+                            </div>
+                        </div>
+
+                        <div id="proctorResult" class="hidden"></div>
+                    </div>
+
+                    <!-- Assignment Form -->
+                    <div id="sched-assign" class="sched-content hidden">
+                        <div class="bg-white border rounded-lg p-4 mb-4">
+                            <h4 class="font-semibold mb-3">📋 ตั้งค่างาน</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">ชื่องาน</label>
+                                    <input type="text" id="assignTaskName" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="เช่น รับมอบตัวนักเรียน ม.1">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">ประเภทงาน</label>
+                                    <select id="assignTaskType" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                        <option value="คุมสอบ">คุมสอบ (3.0)</option>
+                                        <option value="ดำเนินการสอบ">ดำเนินการสอบ (2.5)</option>
+                                        <option value="ตรวจข้อสอบ">ตรวจข้อสอบ (2.5)</option>
+                                        <option value="รับมอบตัว" selected>รับมอบตัว (2.0)</option>
+                                        <option value="รักษาความปลอดภัย">รักษาความปลอดภัย (2.0)</option>
+                                        <option value="พยาบาล">พยาบาล (2.0)</option>
+                                        <option value="ประเมินผล">ประเมินผล (2.0)</option>
+                                        <option value="ออกข้อสอบ">ออกข้อสอบ (2.0)</option>
+                                        <option value="อำนวยการ">อำนวยการ (1.5)</option>
+                                        <option value="สถานที่">สถานที่ (1.5)</option>
+                                        <option value="ลงทะเบียน">ลงทะเบียน (1.5)</option>
+                                        <option value="จราจร">จราจร (1.5)</option>
+                                        <option value="การเงิน">การเงิน (1.5)</option>
+                                        <option value="ประชาสัมพันธ์">ประชาสัมพันธ์ (1.0)</option>
+                                        <option value="ทั่วไป">ทั่วไป (1.0)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">กลุ่มสาระที่ไม่ร่วม</label>
+                                    <select id="assignExcludeDept" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                        <option value="">ไม่ยกเว้น</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">วันที่</label>
+                                    <input type="date" id="assignDate" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">เวลาเริ่ม</label>
+                                    <input type="time" id="assignStartTime" class="w-full border rounded-lg px-3 py-2 text-sm" value="08:00">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">เวลาจบ</label>
+                                    <input type="time" id="assignEndTime" class="w-full border rounded-lg px-3 py-2 text-sm" value="16:00">
+                                </div>
+                            </div>
+
+                            <h4 class="font-semibold mb-2 text-sm text-gray-600">👥 จำนวนบุคลากรตามบทบาท</h4>
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                                <div>
+                                    <label class="block text-xs text-gray-500">ประธาน</label>
+                                    <input type="number" id="roleChair" class="w-full border rounded-lg px-2 py-2 text-sm" value="1" min="0">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">รองประธาน</label>
+                                    <input type="number" id="roleViceChair" class="w-full border rounded-lg px-2 py-2 text-sm" value="1" min="0">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">เลขานุการ</label>
+                                    <input type="number" id="roleSecretary" class="w-full border rounded-lg px-2 py-2 text-sm" value="1" min="0">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">ผู้ช่วยเลขาฯ</label>
+                                    <input type="number" id="roleAsstSec" class="w-full border rounded-lg px-2 py-2 text-sm" value="1" min="0">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">กรรมการ</label>
+                                    <input type="number" id="roleCommittee" class="w-full border rounded-lg px-2 py-2 text-sm" value="10" min="0">
+                                </div>
+                            </div>
+
+                            <button id="btnGenerateAssign" class="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 text-sm">📋 สร้างตารางปฏิบัติงาน</button>
+                        </div>
+
+                        <div id="assignResult" class="hidden"></div>
+                    </div>
                 </div>
             </div>
         </section>
