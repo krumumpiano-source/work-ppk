@@ -38,6 +38,11 @@ def handle_404(e):
         return jsonify({'error': 'ไม่พบ endpoint นี้'}), 404
     return e
 
+
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
 # In-memory storage for uploaded results
 analysis_store = {}
 
