@@ -5,9 +5,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-tha \
-    tesseract-ocr-eng \
-    libgl1-mesa-glx \
-    libglib2.0-0 && \
+    tesseract-ocr-eng && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
