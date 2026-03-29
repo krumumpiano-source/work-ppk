@@ -30,26 +30,28 @@ def _extract_text_pdfplumber(filepath):
     return pages_text
 
 
-def _extract_text_ocr(filepath):
+def _extract_text_ocr(filepath, max_pages=10):
     """Extract text using Tesseract OCR (for garbled-font or scanned PDFs)."""
     import pytesseract
     from PIL import Image
 
     pages_text = []
     doc = fitz.open(filepath)
+    total_pages = min(len(doc), max_pages)
 
-    for page_num in range(len(doc)):
+    for page_num in range(total_pages):
         page = doc[page_num]
-        # Render at 300 DPI for good OCR quality
-        mat = fitz.Matrix(300 / 72, 300 / 72)
+        # Render at 200 DPI (balance speed vs quality on free tier)
+        mat = fitz.Matrix(200 / 72, 200 / 72)
         pix = page.get_pixmap(matrix=mat)
 
         # Convert pixmap to PIL Image
         img_data = pix.tobytes("png")
         img = Image.open(io.BytesIO(img_data))
 
-        # Run Tesseract OCR with Thai + English
-        page_text = pytesseract.image_to_string(img, lang='tha+eng')
+        # Run Tesseract OCR with Thai + English, PSM 6 for faster block detection
+        custom_config = '--psm 6 --oem 1'
+        page_text = pytesseract.image_to_string(img, lang='tha+eng', config=custom_config)
         pages_text.append(page_text)
 
     doc.close()
