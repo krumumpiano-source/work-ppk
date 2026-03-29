@@ -21,6 +21,23 @@ app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+
+@app.errorhandler(500)
+def handle_500(e):
+    return jsonify({'error': f'เซิร์ฟเวอร์ผิดพลาด: {str(e)}'}), 500
+
+
+@app.errorhandler(413)
+def handle_413(e):
+    return jsonify({'error': 'ไฟล์มีขนาดใหญ่เกินไป (สูงสุด 50MB)'}), 413
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'ไม่พบ endpoint นี้'}), 404
+    return e
+
 # In-memory storage for uploaded results
 analysis_store = {}
 
@@ -34,6 +51,11 @@ def allowed_file(filename):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/api/health')
+def health():
+    return jsonify({'status': 'ok'})
 
 
 @app.route('/api/staff', methods=['GET'])

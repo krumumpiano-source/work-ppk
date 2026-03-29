@@ -67,7 +67,13 @@ btnUpload.addEventListener('click', async () => {
         progressBar.style.width = '30%';
         progressText.textContent = 'กำลังสกัดข้อมูลจาก PDF (อาจใช้ OCR)...';
         const res = await fetch('/api/upload', { method: 'POST', body: formData });
-        const data = await res.json();
+        let data;
+        try {
+            data = await res.json();
+        } catch (parseErr) {
+            alert('เกิดข้อผิดพลาด: เซิร์ฟเวอร์ตอบกลับข้อมูลที่ไม่ถูกต้อง (status ' + res.status + ')');
+            return;
+        }
         if (!res.ok) { alert(data.error || 'เกิดข้อผิดพลาด'); return; }
         uploadResults = data.results;
 
@@ -89,7 +95,13 @@ btnUpload.addEventListener('click', async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ results: uploadResults }),
         });
-        analysisData = await analyzeRes.json();
+        try {
+            analysisData = await analyzeRes.json();
+        } catch (parseErr) {
+            alert('เกิดข้อผิดพลาดในการวิเคราะห์: เซิร์ฟเวอร์ตอบกลับข้อมูลที่ไม่ถูกต้อง (status ' + analyzeRes.status + ')');
+            return;
+        }
+        if (!analyzeRes.ok) { alert(analysisData.error || 'เกิดข้อผิดพลาดในการวิเคราะห์'); return; }
 
         progressBar.style.width = '100%';
         progressText.textContent = 'เสร็จสิ้น!';
@@ -744,7 +756,9 @@ document.getElementById('btnGenerateProctor').addEventListener('click', async ()
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(config),
         });
-        const data = await res.json();
+        let data;
+        try { data = await res.json(); } catch (e) { alert('เกิดข้อผิดพลาด: เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง (status ' + res.status + ')'); return; }
+        if (!res.ok) { alert(data.error || 'เกิดข้อผิดพลาด'); return; }
         renderProctorResult(data);
     } catch (err) {
         alert('เกิดข้อผิดพลาด: ' + err.message);
@@ -851,7 +865,9 @@ document.getElementById('btnGenerateAssign').addEventListener('click', async () 
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(config),
         });
-        const data = await res.json();
+        let data;
+        try { data = await res.json(); } catch (e) { alert('เกิดข้อผิดพลาด: เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง (status ' + res.status + ')'); return; }
+        if (!res.ok) { alert(data.error || 'เกิดข้อผิดพลาด'); return; }
         renderAssignResult(data);
     } catch (err) {
         alert('เกิดข้อผิดพลาด: ' + err.message);
