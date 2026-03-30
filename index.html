@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>วิเคราะห์ความเที่ยงธรรม — ภาระงาน ร.ร.พะเยาพิทยาคม</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; }
+        .drop-zone { border: 3px dashed #94a3b8; transition: all 0.3s; }
+        .drop-zone.dragover { border-color: #3b82f6; background: #eff6ff; }
+        .tab-active { border-bottom: 3px solid #3b82f6; color: #3b82f6; font-weight: 700; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        #chartContainer, #fatigueChartContainer { position:relative; width:100%; min-height:400px; }
+        .sort-btn { cursor:pointer; user-select:none; }
+        .sort-btn:hover { color:#3b82f6; }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white; }
+            .shadow-sm { box-shadow: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <header class="bg-white shadow-sm border-b no-print">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">⚖️ วิเคราะห์ความเที่ยงธรรมในการมอบหมายภาระงาน</h1>
+                <p class="text-sm text-gray-500">โรงเรียนพะเยาพิทยาคม — ตรวจสอบจาก PDF คำสั่งจริง ครบทุกมิติ</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <div id="staffCount" class="text-right text-sm text-gray-400"></div>
+                <button id="btnExport" class="hidden bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition">📄 Export รายงาน</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Upload -->
+        <section id="uploadSection" class="mb-8 no-print">
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <h2 class="text-lg font-semibold mb-4">📁 อัปโหลดไฟล์คำสั่ง PDF (ทุกฝ่ายงาน)</h2>
+                <div id="dropZone" class="drop-zone rounded-lg p-10 text-center cursor-pointer">
+                    <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 48 48"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <p class="text-gray-600 font-semibold">ลากไฟล์ PDF มาวางที่นี่</p>
+                    <p class="text-sm text-gray-400 mt-1">หรือคลิกเพื่อเลือกไฟล์ (รองรับหลายไฟล์ ทุกฝ่ายงาน ทั้ง text-based และสแกน)</p>
+                    <input type="file" id="fileInput" multiple accept=".pdf" class="hidden">
+                </div>
+                <div id="fileList" class="mt-4 space-y-2 hidden"></div>
+                <div id="uploadActions" class="mt-4 flex gap-3 hidden">
+                    <button id="btnUpload" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">🔍 วิเคราะห์</button>
+                    <button id="btnClear" class="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg font-semibond hover:bg-gray-300 transition">❌ ล้าง</button>
+                </div>
+                <div id="uploadProgress" class="mt-4 hidden">
+                    <div class="w-full bg-gray-200 rounded-full h-3"><div id="progressBar" class="bg-blue-600 h-3 rounded-full transition-all duration-500" style="width:0%"></div></div>
+                    <p id="progressText" class="text-sm text-gray-500 mt-1"></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results -->
+        <section id="resultsSection" class="hidden fade-in">
+            <!-- Fairness Banner -->
+            <div id="fairnessBanner" class="mb-6 bg-white rounded-xl shadow-sm p-6">
+                <h3 class="text-lg font-bold mb-4">⚖️ ดัชนีความเที่ยงธรรมภาพรวม</h3>
+                <div class="flex flex-wrap items-center gap-6">
+                    <div class="text-center min-w-[140px]">
+                        <div id="fairnessScoreValue" class="text-5xl font-bold">—</div>
+                        <div id="fairnessGrade" class="text-sm font-semibold mt-1">—</div>
+                        <div class="text-xs text-gray-400 mt-1">100 = เท่าเทียมสมบูรณ์</div>
+                    </div>
+                    <div class="flex-1 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                        <div class="bg-gray-50 rounded-lg p-3 text-center">
+                            <div class="text-xs text-gray-400">Gini Coefficient</div>
+                            <div id="giniValue" class="text-lg font-bold text-gray-700">—</div>
+                            <div class="text-xs text-gray-400">0=เท่าเทียม 1=ไม่เท่าเทียม</div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3 text-center">
+                            <div class="text-xs text-gray-400">ส่วนเบี่ยงเบนมาตรฐาน (SD)</div>
+                            <div id="sdValue" class="text-lg font-bold text-gray-700">—</div>
+                            <div class="text-xs text-gray-400">ยิ่งสูง=กระจายไม่เท่ากัน</div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3 text-center">
+                            <div class="text-xs text-gray-400">อัตราการมีส่วนร่วม</div>
+                            <div id="participationRate" class="text-lg font-bold text-gray-700">—</div>
+                            <div class="text-xs text-gray-400">% คนที่ได้รับมอบหมาย</div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-3 text-center">
+                            <div class="text-xs text-gray-400">คนรับภาระมากเกิน</div>
+                            <div id="overworkedCount" class="text-lg font-bold text-red-600">—</div>
+                            <div class="text-xs text-gray-400">&gt;1.5x ค่าเฉลี่ย</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+                <div class="bg-white rounded-xl shadow-sm p-4 text-center">
+                    <div class="text-3xl font-bold text-blue-600" id="statFiles">0</div>
+                    <div class="text-sm text-gray-500">ไฟล์ที่วิเคราะห์</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-4 text-center">
+                    <div class="text-3xl font-bold text-green-600" id="statAssigned">0</div>
+                    <div class="text-sm text-gray-500">คนได้รับมอบหมาย</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-4 text-center">
+                    <div class="text-3xl font-bold text-red-600" id="statNever">0</div>
+                    <div class="text-sm text-gray-500">ไม่เคยได้รับเลย</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-4 text-center">
+                    <div class="text-3xl font-bold text-purple-600" id="statMax">0</div>
+                    <div class="text-sm text-gray-500">สูงสุด (ครั้ง)</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-4 text-center">
+                    <div class="text-3xl font-bold text-orange-600" id="statAvg">0</div>
+                    <div class="text-sm text-gray-500">เฉลี่ย (ครั้ง)</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-4 text-center">
+                    <div class="text-3xl font-bold text-teal-600" id="statMaxFatigue">0</div>
+                    <div class="text-sm text-gray-500">ดัชนีล้าสูงสุด</div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="bg-white rounded-xl shadow-sm">
+                <div class="flex border-b overflow-x-auto no-print">
+                    <button class="tab-btn tab-active px-4 py-3 text-sm whitespace-nowrap" data-tab="table">📋 ตารางสรุป</button>
+                    <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="chart">📊 กราฟ</button>
+                    <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="fatigue">🔥 เหนื่อยล้า</button>
+                    <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="fairness">⚖️ เที่ยงธรรม</button>
+                    <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="never">🔴 ไม่เคยได้รับ</button>
+                    <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="dept">🏫 กลุ่มสาระ</button>
+                    <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="workgroup">🗂️ ฝ่ายงาน</button>
+                    <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="scheduler">📅 จัดตาราง</button>
+                </div>
+
+                <!-- Tab: Table -->
+                <div id="tab-table" class="tab-content p-4">
+                    <div class="flex flex-wrap gap-3 mb-4 no-print">
+                        <input type="text" id="searchName" placeholder="🔍 ค้นหาชื่อ..." class="border rounded-lg px-3 py-2 text-sm w-56">
+                        <select id="filterDept" class="border rounded-lg px-3 py-2 text-sm"><option value="">ทุกกลุ่มสาระ</option></select>
+                        <select id="filterStatus" class="border rounded-lg px-3 py-2 text-sm">
+                            <option value="">ทุกสถานะ</option>
+                            <option value="assigned">ได้รับมอบหมาย</option>
+                            <option value="never">ไม่เคยได้รับ</option>
+                            <option value="overworked">รับภาระมากเกิน (&gt;1.5x)</option>
+                            <option value="admin">หัวหน้างาน/ผู้บริหาร</option>
+                            <option value="teacher">ครูปฏิบัติการ (ไม่ใช่หัวหน้า)</option>
+                        </select>
+                        <select id="sortBy" class="border rounded-lg px-3 py-2 text-sm">
+                            <option value="weighted_score">คะแนนถ่วงน้ำหนัก ↓</option>
+                            <option value="count">จำนวนครั้ง ↓</option>
+                            <option value="fatigue">ดัชนีเหนื่อยล้า ↓</option>
+                            <option value="name">ชื่อ ก-ฮ</option>
+                        </select>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead><tr class="bg-gray-50 text-left">
+                                <th class="px-2 py-2">#</th>
+                                <th class="px-2 py-2">ชื่อ-นามสกุล</th>
+                                <th class="px-2 py-2">กลุ่มสาระ</th>
+                                <th class="px-2 py-2 text-center">ครั้ง</th>
+                                <th class="px-2 py-2 text-center">คะแนน</th>
+                                <th class="px-2 py-2 text-center">ดัชนีล้า</th>
+                                <th class="px-2 py-2 text-center">ฝ่ายงาน</th>
+                                <th class="px-2 py-2 no-print"></th>
+                            </tr></thead>
+                            <tbody id="summaryTable"></tbody>
+                        </table>
+                    </div>
+                    <div id="tableInfo" class="text-sm text-gray-400 mt-3 px-3"></div>
+                </div>
+
+                <!-- Tab: Chart -->
+                <div id="tab-chart" class="tab-content p-4 hidden">
+                    <div class="flex flex-wrap gap-3 mb-4 no-print">
+                        <select id="chartDept" class="border rounded-lg px-3 py-2 text-sm"><option value="">ทุกกลุ่มสาระ</option></select>
+                        <select id="chartMetric" class="border rounded-lg px-3 py-2 text-sm">
+                            <option value="weighted_score">คะแนนถ่วงน้ำหนัก</option>
+                            <option value="count">จำนวนครั้ง</option>
+                            <option value="fatigue">ดัชนีเหนื่อยล้า</option>
+                        </select>
+                        <select id="chartRole" class="border rounded-lg px-3 py-2 text-sm">
+                            <option value="">ทุกคน</option>
+                            <option value="teacher">เฉพาะครูปฏิบัติการ</option>
+                            <option value="admin">เฉพาะหัวหน้างาน</option>
+                        </select>
+                    </div>
+                    <div id="chartContainer"><canvas id="assignmentChart"></canvas></div>
+                </div>
+
+                <!-- Tab: Fatigue -->
+                <div id="tab-fatigue" class="tab-content p-4 hidden">
+                    <div class="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                        <h3 class="font-semibold text-yellow-800 mb-2">🔥 ดัชนีเหนื่อยล้า (Fatigue Index) คำนวณจาก 4 ปัจจัย:</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-yellow-700">
+                            <div class="bg-white rounded p-2"><b>น้ำหนักงานรวม (30%)</b><br>คุมสอบ=3, ดำเนินการสอบ=2.5, รับมอบตัว=2, ประชาสัมพันธ์=1</div>
+                            <div class="bg-white rounded p-2"><b>จำนวนครั้ง (25%)</b><br>ยิ่งถูกเรียกใช้บ่อย ยิ่งสูง</div>
+                            <div class="bg-white rounded p-2"><b>งานกระจุกตัว (25%)</b><br>หลายงานภายใน 3 วัน นับเป็น cluster</div>
+                            <div class="bg-white rounded p-2"><b>ระยะห่างระหว่างงาน (20%)</b><br>ห่างน้อย=เหนื่อย, ห่างมาก=พักได้</div>
+                        </div>
+                    </div>
+                    <div class="flex gap-3 mb-4 no-print">
+                        <select id="fatigueDept" class="border rounded-lg px-3 py-2 text-sm"><option value="">ทุกกลุ่มสาระ</option></select>
+                        <select id="fatigueRole" class="border rounded-lg px-3 py-2 text-sm">
+                            <option value="">ทุกคน</option>
+                            <option value="teacher">เฉพาะครูปฏิบัติการ</option>
+                            <option value="admin">เฉพาะหัวหน้างาน</option>
+                        </select>
+                    </div>
+                    <div id="fatigueChartContainer"><canvas id="fatigueChart"></canvas></div>
+                </div>
+
+                <!-- Tab: Fairness -->
+                <div id="tab-fairness" class="tab-content p-4 hidden">
+                    <div id="fairnessDetail"></div>
+                </div>
+
+                <!-- Tab: Never -->
+                <div id="tab-never" class="tab-content p-4 hidden">
+                    <div id="neverList"></div>
+                </div>
+
+                <!-- Tab: Dept -->
+                <div id="tab-dept" class="tab-content p-4 hidden">
+                    <div id="deptStats"></div>
+                </div>
+
+                <!-- Tab: Workgroup -->
+                <div id="tab-workgroup" class="tab-content p-4 hidden">
+                    <div id="workgroupStats"></div>
+                </div>
+
+                <!-- Tab: Scheduler -->
+                <div id="tab-scheduler" class="tab-content p-4 hidden">
+                    <div class="mb-4 bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-700">
+                        📅 <b>ระบบจัดตารางอัตโนมัติ</b> — จัดคนปฏิบัติงานอย่างเป็นธรรม โดยพิจารณา Weighted Score สะสมจาก PDF ที่อัปโหลด
+                        <span class="text-green-500">(อัปโหลด PDF ก่อนใช้งาน เพื่อให้ระบบรู้ภาระงานสะสมแต่ละคน)</span>
+                    </div>
+
+                    <!-- Sub-tabs -->
+                    <div class="flex gap-2 mb-4">
+                        <button class="sched-tab-btn px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white" data-stab="proctor">📝 จัดตารางคุมสอบ</button>
+                        <button class="sched-tab-btn px-4 py-2 rounded-lg text-sm font-semibold bg-gray-200 text-gray-700" data-stab="assign">📋 จัดตารางปฏิบัติงาน</button>
+                    </div>
+
+                    <!-- Proctor Form -->
+                    <div id="sched-proctor" class="sched-content">
+                        <div class="bg-white border rounded-lg p-4 mb-4">
+                            <h4 class="font-semibold mb-3">📝 ตั้งค่าการสอบ</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">ชื่อการสอบ</label>
+                                    <input type="text" id="schedExamName" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="เช่น สอบปลายภาค 2/2569" value="สอบปลายภาค">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">กรรมการต่อห้อง</label>
+                                    <input type="number" id="schedProctorsPerRoom" class="w-full border rounded-lg px-3 py-2 text-sm" value="2" min="1" max="5">
+                                </div>
+                            </div>
+
+                            <h4 class="font-semibold mb-2 text-sm text-gray-600">➕ เพิ่มรอบสอบ</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-6 gap-2 mb-3 items-end">
+                                <div>
+                                    <label class="block text-xs text-gray-500">วันที่</label>
+                                    <input type="date" id="schedDate" class="w-full border rounded-lg px-2 py-2 text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">ช่วงเวลา</label>
+                                    <select id="schedPeriod" class="w-full border rounded-lg px-2 py-2 text-sm">
+                                        <option value="ภาคเช้า">ภาคเช้า</option>
+                                        <option value="ภาคบ่าย">ภาคบ่าย</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">เวลาเริ่ม</label>
+                                    <input type="time" id="schedStartTime" class="w-full border rounded-lg px-2 py-2 text-sm" value="08:00">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">เวลาจบ</label>
+                                    <input type="time" id="schedEndTime" class="w-full border rounded-lg px-2 py-2 text-sm" value="12:00">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">ห้องสอบ (ชื่อ คั่นด้วย ,)</label>
+                                    <input type="text" id="schedRooms" class="w-full border rounded-lg px-2 py-2 text-sm" placeholder="411,412,413,414,415">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">กลุ่มสาระที่ไม่ร่วม</label>
+                                    <select id="schedExcludeDept" class="w-full border rounded-lg px-2 py-2 text-sm">
+                                        <option value="">ไม่ยกเว้น</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button id="btnAddSession" class="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-600">+ เพิ่มรอบสอบ</button>
+
+                            <div id="sessionList" class="mt-4 space-y-2"></div>
+
+                            <div class="mt-4 flex gap-3">
+                                <button id="btnGenerateProctor" class="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 text-sm" disabled>📅 สร้างตารางคุมสอบ</button>
+                                <button id="btnClearSessions" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-300">ล้าง</button>
+                            </div>
+                        </div>
+                        <div id="proctorResult" class="hidden"></div>
+                    </div>
+
+                    <!-- Assignment Form -->
+                    <div id="sched-assign" class="sched-content hidden">
+                        <div class="bg-white border rounded-lg p-4 mb-4">
+                            <h4 class="font-semibold mb-3">📋 ตั้งค่างาน</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">ชื่องาน</label>
+                                    <input type="text" id="assignTaskName" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="เช่น รับมอบตัวนักเรียน ม.1">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">ประเภทงาน</label>
+                                    <select id="assignTaskType" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                        <option value="คุมสอบ">คุมสอบ (3.0)</option>
+                                        <option value="ดำเนินการสอบ">ดำเนินการสอบ (2.5)</option>
+                                        <option value="ตรวจข้อสอบ">ตรวจข้อสอบ (2.5)</option>
+                                        <option value="รับมอบตัว" selected>รับมอบตัว (2.0)</option>
+                                        <option value="รักษาความปลอดภัย">รักษาความปลอดภัย (2.0)</option>
+                                        <option value="พยาบาล">พยาบาล (2.0)</option>
+                                        <option value="ประเมินผล">ประเมินผล (2.0)</option>
+                                        <option value="ออกข้อสอบ">ออกข้อสอบ (2.0)</option>
+                                        <option value="อำนวยการ">อำนวยการ (1.5)</option>
+                                        <option value="สถานที่">สถานที่ (1.5)</option>
+                                        <option value="ลงทะเบียน">ลงทะเบียน (1.5)</option>
+                                        <option value="จราจร">จราจร (1.5)</option>
+                                        <option value="การเงิน">การเงิน (1.5)</option>
+                                        <option value="ประชาสัมพันธ์">ประชาสัมพันธ์ (1.0)</option>
+                                        <option value="ทั่วไป">ทั่วไป (1.0)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">กลุ่มสาระที่ไม่ร่วม</label>
+                                    <select id="assignExcludeDept" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                        <option value="">ไม่ยกเว้น</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">วันที่</label>
+                                    <input type="date" id="assignDate" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">เวลาเริ่ม</label>
+                                    <input type="time" id="assignStartTime" class="w-full border rounded-lg px-3 py-2 text-sm" value="08:00">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">เวลาจบ</label>
+                                    <input type="time" id="assignEndTime" class="w-full border rounded-lg px-3 py-2 text-sm" value="16:00">
+                                </div>
+                            </div>
+                            <h4 class="font-semibold mb-2 text-sm text-gray-600">👥 จำนวนบุคลากรตามบทบาท</h4>
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                                <div>
+                                    <label class="block text-xs text-gray-500">ประธาน</label>
+                                    <input type="number" id="roleChair" class="w-full border rounded-lg px-2 py-2 text-sm" value="1" min="0">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">รองประธาน</label>
+                                    <input type="number" id="roleViceChair" class="w-full border rounded-lg px-2 py-2 text-sm" value="1" min="0">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">เลขานุการ</label>
+                                    <input type="number" id="roleSecretary" class="w-full border rounded-lg px-2 py-2 text-sm" value="1" min="0">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">ผู้ช่วยเลขาฯ</label>
+                                    <input type="number" id="roleAsstSec" class="w-full border rounded-lg px-2 py-2 text-sm" value="1" min="0">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">กรรมการ</label>
+                                    <input type="number" id="roleCommittee" class="w-full border rounded-lg px-2 py-2 text-sm" value="10" min="0">
+                                </div>
+                            </div>
+                            <button id="btnGenerateAssign" class="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 text-sm">📋 สร้างตารางปฏิบัติงาน</button>
+                        </div>
+                        <div id="assignResult" class="hidden"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Modal -->
+        <div id="personModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-y-auto p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 id="modalName" class="text-xl font-bold"></h3>
+                    <button id="closeModal" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                </div>
+                <div id="modalContent"></div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="text-center text-sm text-gray-400 py-6 no-print">
+        ระบบวิเคราะห์ความเที่ยงธรรมในการมอบหมายภาระงาน — โรงเรียนพะเยาพิทยาคม
+    </footer>
+
+    <script type="module" src="/js/app.js"></script>
+</body>
+</html>
