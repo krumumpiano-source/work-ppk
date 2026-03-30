@@ -1,7 +1,7 @@
 // Parse extracted PDF text to find staff assignments
 // Port of parser/data_parser.py
 
-import { getStaffDict, getAllNames } from './staff-data.js';
+import { getStaffDict } from './staff-data.js';
 
 function normalizeName(name) {
   name = name.replace(/[\u200b\u200c\u200d\ufeff]/g, '');
@@ -22,8 +22,7 @@ function buildNameLookup(staffDict) {
   for (const name of Object.keys(staffDict)) {
     const norm = normalizeName(name);
     lookup[norm] = name;
-    const parts = name.split(/\s+/);
-    if (parts.length >= 2) lookup[parts[parts.length - 1]] = name;
+    // NOTE: surname-only shortcut removed — same surname = same family, cannot distinguish
   }
   return lookup;
 }
