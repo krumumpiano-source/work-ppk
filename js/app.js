@@ -118,8 +118,13 @@ function renderSavedOrdersPanel() {
             <span class="text-sm font-semibold text-blue-700">📋 คำสั่งที่บันทึกไว้ (${successFiles.length} ไฟล์ — อัปโหลดเพิ่มเพื่อรวมข้อมูล)</span>
             <button onclick="clearAllSavedOrders()" class="text-xs text-red-500 hover:text-red-700 underline">🗑️ ล้างทั้งหมด</button>
         </div>
-        <div class="flex flex-wrap gap-2">${successFiles.map(r => `<span class="inline-flex items-center gap-1 bg-white border border-blue-300 rounded-full px-3 py-1 text-xs text-blue-800">📄 ${r.filename} <button onclick="removeSavedOrder('${r.filename.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"
-            class="text-red-400 hover:text-red-600 ml-1 font-bold">&times;</button></span>`).join('')}</div>
+        <div class="flex flex-wrap gap-2">${successFiles.map(r => {
+            const meta = (r.academic_year ? ` ${r.academic_year}` : '') + (r.term ? `/เทอม${r.term}` : '');
+            const metaBadge = meta ? `<span class="bg-blue-200 text-blue-800 rounded-full px-1.5 py-0.5 text-xs ml-1">${meta.trim()}</span>` : '';
+            const safeFilename = r.filename.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            return `<span class="inline-flex items-center gap-1 bg-white border border-blue-300 rounded-full px-3 py-1 text-xs text-blue-800">📄 ${r.filename}${metaBadge} <button onclick="removeSavedOrder('${safeFilename}')"
+            class="text-red-400 hover:text-red-600 ml-1 font-bold">&times;</button></span>`;
+        }).join('')}</div>
     </div>`;
 }
 
@@ -229,6 +234,8 @@ btnUpload.addEventListener('click', async () => {
     progressText.textContent = 'กำลังเริ่มต้น...';
 
     uploadResults = [];
+    const _batchYear = document.getElementById('uploadYear')?.value.trim() || '';
+    const _batchTerm = document.getElementById('uploadTerm')?.value || '';
 
     try {
         // --- Step 1: Extract + Parse each PDF ---
@@ -247,6 +254,8 @@ btnUpload.addEventListener('click', async () => {
                 uploadResults.push({
                     filename: f.name,
                     success: true,
+                    academic_year: _batchYear,
+                    term: _batchTerm,
                     assignments: parsed.assignments,
                     unique_count: parsed.unique_count,
                     total_assignments: parsed.total_assignments,
@@ -259,6 +268,8 @@ btnUpload.addEventListener('click', async () => {
                 uploadResults.push({
                     filename: f.name,
                     success: false,
+                    academic_year: _batchYear,
+                    term: _batchTerm,
                     error: err.message,
                     assignments: [],
                     unique_count: 0,
@@ -314,6 +325,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
         if (btn.dataset.tab === 'chart') renderChart();
         if (btn.dataset.tab === 'fatigue') renderFatigueChart();
+        if (btn.dataset.tab === 'top10') renderTop10Panel();
     });
 });
 
@@ -374,11 +386,18 @@ function renderAllResults() {
     const deptOpts = '<option value="">ทุกกลุ่มสาระ</option>' + depts.map(d => `<option value="${d}">${d}</option>`).join('');
     ['filterDept', 'chartDept', 'fatigueDept'].forEach(id => document.getElementById(id).innerHTML = deptOpts);
 
+    // Year filter options
+    const _uploads = loadParsedUploads() || [];
+    const _years = [...new Set(_uploads.filter(r => r.success && r.academic_year).map(r => r.academic_year))].sort();
+    const _yearEl = document.getElementById('filterYear');
+    if (_yearEl) _yearEl.innerHTML = '<option value="">ทุกปีการศึกษา</option>' + _years.map(y => `<option value="${y}">${y}</option>`).join('');
+
     renderTable();
     renderNeverAssigned();
     renderDeptStats();
     renderFairnessDetail();
     renderWorkgroupStats();
+    renderTop10Panel();
 }
 
 // ===========================================
@@ -398,6 +417,12 @@ function renderTable() {
     else if (status === 'overworked') data = data.filter(s => s.assignment_count > analysisData.avg_assignments * 1.5);
     else if (status === 'admin') data = data.filter(s => isAdmin(s));
     else if (status === 'teacher') data = data.filter(s => !isAdmin(s));
+
+    const filterYearVal = document.getElementById('filterYear')?.value || '';
+    if (filterYearVal) {
+        const _yearFiles = new Set((loadParsedUploads() || []).filter(r => r.success && r.academic_year === filterYearVal).map(r => r.filename));
+        data = data.filter(s => (s.assignments || []).some(a => _yearFiles.has(a.source_file)));
+    }
 
     if (sortKey === 'weighted_score') data.sort((a, b) => (b.total_weighted_score || 0) - (a.total_weighted_score || 0));
     else if (sortKey === 'count') data.sort((a, b) => b.assignment_count - a.assignment_count);
@@ -443,6 +468,8 @@ function renderTable() {
 document.getElementById('searchName').addEventListener('input', renderTable);
 document.getElementById('filterDept').addEventListener('change', renderTable);
 document.getElementById('filterStatus').addEventListener('change', renderTable);
+document.getElementById('sortBy').addEventListener('change', renderTable);
+document.getElementById('filterYear').addEventListener('change', renderTable);
 document.getElementById('sortBy').addEventListener('change', renderTable);
 
 // ===========================================
@@ -1277,6 +1304,55 @@ function exportStaffJson() {
 }
 window.exportStaffJson = exportStaffJson;
 
+function importStaffJson(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (!Array.isArray(data)) throw new Error('ไฟล์ต้องมีรูปแบบ Array');
+            const valid = data.filter(s => s.name && s.department);
+            if (!valid.length) throw new Error('ไม่พบข้อมูลที่ถูกต้อง');
+            if (!confirm(`นำเข้า ${valid.length} คน?\nจะเขียนทับข้อมูลบุคลากรปัจจุบัน`)) return;
+            saveStaffList(valid);
+            renderStaffTable();
+            initStaffUI();
+            alert(`นำเข้าสำเร็จ ${valid.length} คน`);
+        } catch (err) {
+            alert('ไฟล์ JSON ไม่ถูกต้อง: ' + err.message);
+        }
+    };
+    reader.readAsText(file, 'utf-8');
+    event.target.value = '';
+}
+window.importStaffJson = importStaffJson;
+
+function exportCsv() {
+    if (!allSummary.length) return;
+    const headers = ['ลำดับ', 'ชื่อ-นามสกุล', 'กลุ่มสาระ/ฝ่าย', 'ตำแหน่ง', 'ตำแหน่งบริหาร', 'จำนวนครั้ง', 'คะแนนถ่วงน้ำหนัก', 'ดัชนีเหนื่อยล้า', 'ฝ่ายงาน', 'คำสั่งที่พบ', 'ยกเว้นจากสถิติ'];
+    const rows = allSummary.map((s, i) => [
+        i + 1,
+        s.name,
+        s.department,
+        s.position || '',
+        s.admin_role || '',
+        s.assignment_count,
+        (s.total_weighted_score || 0).toFixed(1),
+        (s.fatigue_index || 0).toFixed(1),
+        Object.keys(s.work_groups || {}).join(' / '),
+        (s.unique_orders || []).join(' / '),
+        s.exclude_from_stats ? 'ยกเว้น' : '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'ppk_workload.csv';
+    a.click();
+}
+window.exportCsv = exportCsv;
+
 function resetStaffToDefault() {
     if (!confirm(`รีเซ็ตกลับเป็นฐานข้อมูลเริ่มต้น (${STAFF_LIST.length} คน)?\nข้อมูลที่แก้ไขจะหายหมด`)) return;
     localStorage.removeItem(STAFF_STORAGE_KEY);
@@ -1284,6 +1360,79 @@ function resetStaffToDefault() {
     initStaffUI();
 }
 window.resetStaffToDefault = resetStaffToDefault;
+
+// ===========================================
+// TOP 10 PANEL
+// ===========================================
+function renderTop10Panel() {
+    const panel = document.getElementById('top10Panel');
+    if (!panel || !analysisData) return;
+
+    const active = allSummary.filter(s => !s.exclude_from_stats);
+    const withWork = active.filter(s => s.assignment_count > 0);
+    const top10 = [...withWork].sort((a, b) => (b.total_weighted_score || 0) - (a.total_weighted_score || 0)).slice(0, 10);
+    const bottom10 = [...active].sort((a, b) => a.assignment_count - b.assignment_count).slice(0, 10);
+    const avg = analysisData.avg_assignments;
+    const maxCount = analysisData.max_assignments || 1;
+
+    function personRow(s, rank, bg) {
+        const roleTag = s.admin_role ? ` <span class="text-xs bg-amber-100 text-amber-800 px-1 rounded">${s.admin_role}</span>` : '';
+        const cntColor = s.assignment_count > avg * 1.5 ? 'text-red-600' : s.assignment_count === 0 ? 'text-gray-400' : 'text-gray-700';
+        return `<div class="flex items-center gap-3 py-2 border-b last:border-0 cursor-pointer hover:opacity-80 rounded px-1" onclick="showPerson('${s.name.replace(/'/g, "\\'")}')">
+            <span class="w-7 h-7 rounded-full ${bg} flex items-center justify-center text-white font-bold text-xs shrink-0">${rank}</span>
+            <div class="flex-1 min-w-0"><div class="font-medium text-sm truncate">${s.name}${roleTag}</div><div class="text-xs text-gray-400">${s.department}</div></div>
+            <div class="text-right shrink-0"><div class="font-bold text-sm ${cntColor}">${s.assignment_count} ครั้ง</div><div class="text-xs text-gray-400">WS: ${(s.total_weighted_score || 0).toFixed(1)}</div></div>
+        </div>`;
+    }
+
+    const top5 = top10.slice(0, 5);
+    const bot5 = bottom10.slice(0, 5);
+    let topBars = '';
+    let botBars = '';
+    for (const s of top5) {
+        const h = Math.max(4, Math.round((s.assignment_count / maxCount) * 96));
+        const label = s.name.replace(/^(นาย|นาง|น\.ส\.|ด\.ช\.|ด\.ญ\.) ?/, '').slice(0, 5);
+        topBars += `<div class="flex-1 flex flex-col items-center justify-end gap-0.5"><span class="text-xs font-bold text-red-600">${s.assignment_count}</span><div class="w-full bg-red-400 rounded-t" style="height:${h}px"></div><span class="text-xs text-gray-500 truncate w-full text-center" title="${s.name}">${label}</span></div>`;
+    }
+    for (const s of bot5) {
+        const h = Math.max(4, Math.round((s.assignment_count / maxCount) * 96));
+        const label = s.name.replace(/^(นาย|นาง|น\.ส\.|ด\.ช\.|ด\.ญ\.) ?/, '').slice(0, 5);
+        botBars += `<div class="flex-1 flex flex-col items-center justify-end gap-0.5"><span class="text-xs font-bold text-green-600">${s.assignment_count}</span><div class="w-full bg-green-400 rounded-t" style="height:${h}px"></div><span class="text-xs text-gray-500 truncate w-full text-center" title="${s.name}">${label}</span></div>`;
+    }
+
+    const maxVal = top10[0]?.assignment_count || 0;
+    const minVal = bottom10[0]?.assignment_count || 0;
+    const ratio = minVal > 0 ? (maxVal / minVal).toFixed(1) : '∞';
+
+    panel.innerHTML = `
+        <h3 class="text-lg font-bold mb-3">🏆 เปรียบเทียบภาระงาน Top/Bottom 10</h3>
+        <div class="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+            ⚠️ ผู้รับภาระมากสุด <b>${maxVal} ครั้ง</b> มากกว่าผู้รับน้อยสุด <b>${minVal} ครั้ง</b> ถึง <b>${ratio} เท่า</b>
+            <span class="text-amber-600 ml-2">(ค่าเฉลี่ย ${avg} ครั้ง)</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div class="bg-red-50 border border-red-200 rounded-xl p-4">
+                <h4 class="font-semibold text-red-700 mb-2">🔴 รับภาระมากที่สุด 10 คน (เรียงตามคะแนนถ่วงน้ำหนัก)</h4>
+                ${top10.map((s, i) => personRow(s, i + 1, 'bg-red-500')).join('')}
+            </div>
+            <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+                <h4 class="font-semibold text-green-700 mb-2">🟢 รับภาระน้อยที่สุด 10 คน (รวมผู้ยังไม่เคยได้รับ)</h4>
+                ${bottom10.map((s, i) => personRow(s, i + 1, 'bg-green-500')).join('')}
+            </div>
+        </div>
+        <div class="bg-gray-50 rounded-xl p-4">
+            <h4 class="font-semibold text-gray-700 mb-3">📊 เปรียบเทียบภาพ — 5 สูงสุด vs 5 ต่ำสุด (คลิกชื่อเพื่อดูรายละเอียด)</h4>
+            <div class="flex items-end gap-1 h-28 mb-2">
+                ${topBars}
+                <div class="w-px bg-gray-300 mx-2 self-stretch shrink-0"></div>
+                ${botBars}
+            </div>
+            <div class="flex justify-between text-xs text-gray-400">
+                <span>← รับงานมากสุด 5 คน</span>
+                <span>รับงานน้อยสุด 5 คน →</span>
+            </div>
+        </div>`;
+}
 
 // init staff tab when clicked
 document.querySelectorAll('.tab-btn').forEach(btn => {
