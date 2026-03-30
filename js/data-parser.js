@@ -113,8 +113,8 @@ function extractTimeContexts(text) {
   return contexts;
 }
 
-export function parseAssignments(text, sourceFile = '') {
-  const staffDict = getStaffDict();
+export function parseAssignments(text, sourceFile = '', staffDictOverride = null) {
+  const staffDict = staffDictOverride || getStaffDict();
   const nameLookup = buildNameLookup(staffDict);
   const orderInfo = extractOrderInfo(text);
   const dateContexts = extractDateContexts(text);

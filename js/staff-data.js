@@ -147,7 +147,7 @@ export const STAFF_LIST = [
   { name: "กวี บุญกว้าง", department: "ศิลปะ", position: "ครูชำนาญการพิเศษ", admin_role: null },
   { name: "เปรมฤทธิ์ อินแต่ง", department: "ศิลปะ", position: "ครูชำนาญการพิเศษ", admin_role: "หัวหน้ากลุ่มบริหารงานบุคคล" },
   { name: "กรรณิกา คำถิน", department: "ศิลปะ", position: "ครูชำนาญการพิเศษ", admin_role: null },
-  { name: "ดารากรณ์ นาคสุกเอี่อม", department: "ศิลปะ", position: "ครูชำนาญการพิเศษ", admin_role: null },
+  { name: "ดารากรณ์ นาคสุกเอื่อม", department: "ศิลปะ", position: "ครูชำนาญการพิเศษ", admin_role: null },
   { name: "ชัยพฤษ ทุกขนิโรธ", department: "ศิลปะ", position: "ครูชำนาญการพิเศษ", admin_role: null },
   { name: "พงศธร โพธิแก้ว", department: "ศิลปะ", position: "ครูชำนาญการพิเศษ", admin_role: null },
   { name: "คณณัฏฐ์ นิธิณัฐนนท์", department: "ศิลปะ", position: "ครูชำนาญการพิเศษ", admin_role: null },

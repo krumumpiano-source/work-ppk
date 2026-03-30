@@ -113,7 +113,7 @@ btnUpload.addEventListener('click', async () => {
                 const extracted = await extractTextFromPdf(f, (msg) => {
                     progressText.textContent = `[${f.name}] ${msg}`;
                 });
-                const parsed = parseAssignments(extracted.text, f.name);
+                const parsed = parseAssignments(extracted.text, f.name, getCurrentStaffDict());
 
                 uploadResults.push({
                     filename: f.name,
