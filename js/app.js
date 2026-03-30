@@ -18,6 +18,135 @@ let fatigueChartInstance = null;
 // STAFF DATA — localStorage with fallback to default
 // ===========================================
 const STAFF_STORAGE_KEY = 'ppk_staff_v1';
+const ANALYSIS_STORAGE_KEY = 'ppk_analysis_v1';
+const UPLOADS_STORAGE_KEY = 'ppk_uploads_v1';
+
+function saveAnalysis() {
+    if (!analysisData) return;
+    try {
+        localStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify({ analysisData, savedAt: Date.now() }));
+    } catch (e) { /* quota exceeded */ }
+}
+
+function loadSavedAnalysis() {
+    try {
+        const raw = localStorage.getItem(ANALYSIS_STORAGE_KEY);
+        if (!raw) return false;
+        const payload = JSON.parse(raw);
+        if (!payload.analysisData) return false;
+        analysisData = payload.analysisData;
+        return true;
+    } catch (e) { return false; }
+}
+
+function saveParsedUploads() {
+    try {
+        localStorage.setItem(UPLOADS_STORAGE_KEY, JSON.stringify(uploadResults));
+    } catch (e) { /* quota exceeded */ }
+}
+
+function loadParsedUploads() {
+    try {
+        const raw = localStorage.getItem(UPLOADS_STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch (e) { return null; }
+}
+
+function buildAnalysisData(allResults) {
+    const personAssignments = {};
+    for (const r of allResults) {
+        if (!r.success) continue;
+        for (const a of r.assignments) {
+            if (!personAssignments[a.name]) personAssignments[a.name] = [];
+            personAssignments[a.name].push(a);
+        }
+    }
+    const staffDict = getCurrentStaffDict();
+    const summaryList = Object.entries(staffDict).map(([name, info]) => ({
+        name,
+        department: info.department,
+        position: info.position,
+        admin_role: info.admin_role,
+        exclude_from_stats: !!info.exclude_from_stats,
+        assignment_count: (personAssignments[name] || []).length,
+        assignments: personAssignments[name] || [],
+        unique_orders: [...new Set((personAssignments[name] || []).map(a => a.order_number).filter(Boolean))],
+    }));
+    const activeList = summaryList.filter(s => !s.exclude_from_stats);
+    const analysisResult = analyzeWorkloadFairness(activeList);
+    const assigned = activeList.filter(s => s.assignment_count > 0);
+    const counts = activeList.map(s => s.assignment_count);
+    const avgAssign = Math.round(counts.reduce((s, x) => s + x, 0) / Math.max(activeList.length, 1) * 10) / 10;
+    const excludedSummary = summaryList.filter(s => s.exclude_from_stats).map(s => ({
+        ...s, total_weighted_score: 0, fatigue_index: 0, work_groups: {}, work_group_count: 0, timeline: {},
+    }));
+    const fullSummary = [
+        ...analysisResult.summary.sort((a, b) => (b.total_weighted_score || 0) - (a.total_weighted_score || 0)),
+        ...excludedSummary,
+    ];
+    analysisData = {
+        summary: fullSummary,
+        total_staff: activeList.length,
+        excluded_count: excludedSummary.length,
+        total_assigned: assigned.length,
+        total_never_assigned: activeList.length - assigned.length,
+        never_assigned: activeList.filter(s => s.assignment_count === 0),
+        dept_stats: analysisResult.dept_fairness,
+        fairness: analysisResult.fairness,
+        work_group_distribution: analysisResult.work_group_distribution,
+        max_assignments: Math.max(...counts, 0),
+        min_assignments: assigned.length ? Math.min(...assigned.map(s => s.assignment_count)) : 0,
+        avg_assignments: avgAssign,
+    };
+    lastAnalysisSummary = analysisData.summary;
+    allSummary = analysisData.summary;
+    saveParsedUploads();
+    saveAnalysis();
+    renderSavedOrdersPanel();
+}
+
+function renderSavedOrdersPanel() {
+    const panel = document.getElementById('savedOrdersPanel');
+    if (!panel) return;
+    const saved = loadParsedUploads();
+    const successFiles = (saved || []).filter(r => r.success);
+    if (!successFiles.length) { panel.innerHTML = ''; panel.classList.add('hidden'); return; }
+    panel.classList.remove('hidden');
+    panel.innerHTML = `<div class="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-semibold text-blue-700">📋 คำสั่งที่บันทึกไว้ (${successFiles.length} ไฟล์ — อัปโหลดเพิ่มเพื่อรวมข้อมูล)</span>
+            <button onclick="clearAllSavedOrders()" class="text-xs text-red-500 hover:text-red-700 underline">🗑️ ล้างทั้งหมด</button>
+        </div>
+        <div class="flex flex-wrap gap-2">${successFiles.map(r => `<span class="inline-flex items-center gap-1 bg-white border border-blue-300 rounded-full px-3 py-1 text-xs text-blue-800">📄 ${r.filename} <button onclick="removeSavedOrder('${r.filename.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"
+            class="text-red-400 hover:text-red-600 ml-1 font-bold">&times;</button></span>`).join('')}</div>
+    </div>`;
+}
+
+window.removeSavedOrder = function(filename) {
+    const saved = loadParsedUploads();
+    if (!saved) return;
+    const updated = saved.filter(r => r.filename !== filename);
+    uploadResults = updated;
+    if (!updated.some(r => r.success)) { window.clearAllSavedOrders(); return; }
+    buildAnalysisData(updated);
+    renderAllResults();
+};
+
+window.clearAllSavedOrders = function() {
+    localStorage.removeItem(UPLOADS_STORAGE_KEY);
+    localStorage.removeItem(ANALYSIS_STORAGE_KEY);
+    uploadResults = [];
+    analysisData = null;
+    lastAnalysisSummary = null;
+    allSummary = [];
+    resultsSection.classList.add('hidden');
+    btnExport.classList.add('hidden');
+    const panel = document.getElementById('savedOrdersPanel');
+    if (panel) { panel.innerHTML = ''; panel.classList.add('hidden'); }
+    const notice = document.getElementById('restoreNotice');
+    if (notice) notice.classList.add('hidden');
+};
 
 function loadStaffList() {
     try {
@@ -149,71 +278,24 @@ btnUpload.addEventListener('click', async () => {
         statusHtml += '</div>';
         fileList.innerHTML += statusHtml;
 
-        // --- Step 2: Aggregate all assignments ---
+        // --- Step 2: Merge with saved uploads, then analyze ---
         progressBar.style.width = '70%';
-        progressText.textContent = 'กำลังรวบรวมข้อมูลบุคลากรทั้งหมด...';
+        progressText.textContent = 'กำลังรวมข้อมูลกับคำสั่งที่บันทึกไว้...';
 
-        const personAssignments = {};
-        for (const r of uploadResults) {
-            if (!r.success) continue;
-            for (const a of r.assignments) {
-                if (!personAssignments[a.name]) personAssignments[a.name] = [];
-                personAssignments[a.name].push(a);
-            }
-        }
+        const savedUploads = loadParsedUploads() || [];
+        const newFilenames = new Set(uploadResults.map(r => r.filename));
+        const merged = [...savedUploads.filter(r => !newFilenames.has(r.filename)), ...uploadResults];
+        uploadResults = merged;
 
-        const staffDict = getCurrentStaffDict();
-        const summaryList = Object.entries(staffDict).map(([name, info]) => ({
-            name,
-            department: info.department,
-            position: info.position,
-            admin_role: info.admin_role,
-            exclude_from_stats: !!info.exclude_from_stats,
-            assignment_count: (personAssignments[name] || []).length,
-            assignments: personAssignments[name] || [],
-            unique_orders: [...new Set((personAssignments[name] || []).map(a => a.order_number).filter(Boolean))],
-        }));
-
-        // --- Step 3: Analyze fairness (exclude flagged staff) ---
         progressBar.style.width = '85%';
         progressText.textContent = 'กำลังวิเคราะห์ความเที่ยงธรรม...';
-
-        const activeList = summaryList.filter(s => !s.exclude_from_stats);
-        const analysisResult = analyzeWorkloadFairness(activeList);
-
-        const assigned = activeList.filter(s => s.assignment_count > 0);
-        const counts = activeList.map(s => s.assignment_count);
-        const avgAssign = Math.round(counts.reduce((s, x) => s + x, 0) / Math.max(activeList.length, 1) * 10) / 10;
-
-        // merge excluded back into summary (marked) for display
-        const excludedSummary = summaryList.filter(s => s.exclude_from_stats).map(s => ({
-            ...s, total_weighted_score: 0, fatigue_index: 0,
-            work_groups: {}, work_group_count: 0, timeline: {},
-        }));
-        const fullSummary = [
-            ...analysisResult.summary.sort((a, b) => (b.total_weighted_score || 0) - (a.total_weighted_score || 0)),
-            ...excludedSummary,
-        ];
-
-        analysisData = {
-            summary: fullSummary,
-            total_staff: activeList.length,
-            excluded_count: excludedSummary.length,
-            total_assigned: assigned.length,
-            total_never_assigned: activeList.length - assigned.length,
-            never_assigned: activeList.filter(s => s.assignment_count === 0),
-            dept_stats: analysisResult.dept_fairness,
-            fairness: analysisResult.fairness,
-            work_group_distribution: analysisResult.work_group_distribution,
-            max_assignments: Math.max(...counts, 0),
-            min_assignments: assigned.length ? Math.min(...assigned.map(s => s.assignment_count)) : 0,
-            avg_assignments: avgAssign,
-        };
-
-        lastAnalysisSummary = analysisData.summary;
+        buildAnalysisData(merged);
 
         progressBar.style.width = '100%';
-        progressText.textContent = 'เสร็จสิ้น!';
+        const totalFiles = merged.filter(r => r.success).length;
+        progressText.textContent = `เสร็จสิ้น! (รวม ${totalFiles} ไฟล์คำสั่ง)`;
+        const notice = document.getElementById('restoreNotice');
+        if (notice) notice.classList.add('hidden');
         renderAllResults();
     } catch (err) {
         alert('เกิดข้อผิดพลาด: ' + err.message);
@@ -777,6 +859,23 @@ function initStaffUI() {
     });
 }
 initStaffUI();
+
+// Restore last analysis on page load
+const _initUploads = loadParsedUploads();
+if (_initUploads && _initUploads.some(r => r.success)) {
+    uploadResults = _initUploads;
+    renderSavedOrdersPanel();
+}
+if (loadSavedAnalysis()) {
+    allSummary = analysisData.summary;
+    lastAnalysisSummary = analysisData.summary;
+    resultsSection.classList.remove('hidden');
+    renderAllResults();
+    const savedAt = (() => { try { const p = JSON.parse(localStorage.getItem(ANALYSIS_STORAGE_KEY)); return p.savedAt ? new Date(p.savedAt).toLocaleString('th-TH') : ''; } catch { return ''; } })();
+    const fileCount = (_initUploads || []).filter(r => r.success).length;
+    const notice = document.getElementById('restoreNotice');
+    if (notice) { notice.textContent = `♻️ โหลดข้อมูล ${fileCount} ไฟล์คำสั่งคืน (บันทึกเมื่อ ${savedAt}) — อัปโหลด PDF เพิ่มเพื่อรวมข้อมูล`; notice.classList.remove('hidden'); }
+}
 
 // ===========================================
 // SCHEDULER — Sub-tab switching
