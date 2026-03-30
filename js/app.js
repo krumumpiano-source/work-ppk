@@ -14,6 +14,34 @@ let lastAnalysisSummary = null;
 let chartInstance = null;
 let fatigueChartInstance = null;
 
+// ===========================================
+// STAFF DATA — localStorage with fallback to default
+// ===========================================
+const STAFF_STORAGE_KEY = 'ppk_staff_v1';
+
+function loadStaffList() {
+    try {
+        const saved = localStorage.getItem(STAFF_STORAGE_KEY);
+        if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return JSON.parse(JSON.stringify(STAFF_LIST)); // deep copy default
+}
+
+function saveStaffList(list) {
+    localStorage.setItem(STAFF_STORAGE_KEY, JSON.stringify(list));
+}
+
+function getCurrentStaffDict() {
+    const list = loadStaffList();
+    const dict = {};
+    for (const s of list) dict[s.name] = s;
+    return dict;
+}
+
+function getCurrentDepartments() {
+    return [...new Set(loadStaffList().map(s => s.department))].sort();
+}
+
 // ---- DOM refs ----
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
@@ -134,7 +162,7 @@ btnUpload.addEventListener('click', async () => {
             }
         }
 
-        const staffDict = getStaffDict();
+        const staffDict = getCurrentStaffDict();
         const summaryList = Object.entries(staffDict).map(([name, info]) => ({
             name,
             department: info.department,
@@ -719,15 +747,19 @@ btnExport.addEventListener('click', () => {
 });
 
 // ===========================================
-// INIT — Load staff info (client-side, no fetch)
+// INIT — Load staff info (client-side, from localStorage)
 // ===========================================
-const depts = getDepartments();
-document.getElementById('staffCount').innerHTML = `<b>${STAFF_LIST.length}</b> บุคลากร | <b>${depts.length}</b> กลุ่มสาระ`;
-const deptOpts = '<option value="">ไม่ยกเว้น</option>' + depts.map(d => `<option value="${d}">${d}</option>`).join('');
-['schedExcludeDept', 'assignExcludeDept'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = deptOpts;
-});
+function initStaffUI() {
+    const currentList = loadStaffList();
+    const depts = getCurrentDepartments();
+    document.getElementById('staffCount').innerHTML = `<b>${currentList.length}</b> บุคลากร | <b>${depts.length}</b> กลุ่มสาระ`;
+    const deptOpts = '<option value="">ไม่ยกเว้น</option>' + depts.map(d => `<option value="${d}">${d}</option>`).join('');
+    ['schedExcludeDept', 'assignExcludeDept'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = deptOpts;
+    });
+}
+initStaffUI();
 
 // ===========================================
 // SCHEDULER — Sub-tab switching
@@ -970,3 +1002,163 @@ function renderAssignResult(data) {
     html += '<button onclick="window.print()" class="bg-green-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 mt-4 no-print">🖨️ พิมพ์ตาราง</button>';
     el.innerHTML = html;
 }
+
+// ===========================================
+// STAFF MANAGEMENT
+// ===========================================
+let staffEditIndex = null; // null = add, number = edit index
+
+function renderStaffTable() {
+    const list = loadStaffList();
+    const search = (document.getElementById('staffSearch')?.value || '').trim().toLowerCase();
+    const deptFilter = document.getElementById('staffFilterDept')?.value || '';
+
+    let filtered = list;
+    if (search) filtered = filtered.filter(s => s.name.toLowerCase().includes(search));
+    if (deptFilter) filtered = filtered.filter(s => s.department === deptFilter);
+
+    // populate dept filter dropdown
+    const depts = [...new Set(list.map(s => s.department))].sort();
+    const deptSelect = document.getElementById('staffFilterDept');
+    if (deptSelect) {
+        const cur = deptSelect.value;
+        deptSelect.innerHTML = '<option value="">ทุกกลุ่มสาระ</option>' + depts.map(d => `<option value="${d}" ${d === cur ? 'selected' : ''}>${d}</option>`).join('');
+    }
+
+    const tbody = document.getElementById('staffTable');
+    if (!tbody) return;
+
+    tbody.innerHTML = filtered.map((s, i) => {
+        const realIdx = list.indexOf(s);
+        const adminBadge = s.admin_role ? `<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">${s.admin_role}</span>` : '';
+        return `<tr class="border-b hover:bg-gray-50">
+            <td class="px-2 py-2 text-gray-400">${i + 1}</td>
+            <td class="px-2 py-2 font-medium">${s.name}</td>
+            <td class="px-2 py-2 text-sm text-gray-600">${s.department}</td>
+            <td class="px-2 py-2 text-sm text-gray-500">${s.position || '-'}</td>
+            <td class="px-2 py-2">${adminBadge}</td>
+            <td class="px-2 py-2 text-center">
+                <button onclick="editStaff(${realIdx})" class="text-blue-500 hover:text-blue-700 text-xs mr-2">✏️ แก้ไข</button>
+                <button onclick="deleteStaff(${realIdx})" class="text-red-400 hover:text-red-600 text-xs">🗑️ ลบ</button>
+            </td>
+        </tr>`;
+    }).join('');
+
+    const badge = document.getElementById('staffCountBadge');
+    if (badge) badge.textContent = `${list.length} คน | ${depts.length} กลุ่มสาระ`;
+    document.getElementById('staffTableInfo').textContent = `แสดง ${filtered.length} จาก ${list.length} คน`;
+}
+window.renderStaffTable = renderStaffTable;
+
+function openAddStaffModal() {
+    staffEditIndex = null;
+    document.getElementById('staffModalTitle').textContent = 'เพิ่มบุคลากร';
+    document.getElementById('sfName').value = '';
+    document.getElementById('sfDept').value = '';
+    document.getElementById('sfPosition').value = 'ครู';
+    document.getElementById('sfAdminRole').value = '';
+    document.getElementById('staffModalError').classList.add('hidden');
+
+    // populate dept select
+    const depts = getCurrentDepartments();
+    document.getElementById('sfDeptSelect').innerHTML = '<option value="">-- เลือกจากรายการ --</option>' + depts.map(d => `<option value="${d}">${d}</option>`).join('');
+    document.getElementById('staffModal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('sfName').focus(), 100);
+}
+window.openAddStaffModal = openAddStaffModal;
+
+function editStaff(idx) {
+    const list = loadStaffList();
+    const s = list[idx];
+    if (!s) return;
+    staffEditIndex = idx;
+
+    document.getElementById('staffModalTitle').textContent = 'แก้ไขบุคลากร';
+    document.getElementById('sfName').value = s.name;
+    document.getElementById('sfDept').value = s.department;
+    document.getElementById('sfPosition').value = s.position || 'ครู';
+    document.getElementById('sfAdminRole').value = s.admin_role || '';
+    document.getElementById('staffModalError').classList.add('hidden');
+
+    const depts = getCurrentDepartments();
+    document.getElementById('sfDeptSelect').innerHTML = '<option value="">-- เลือกจากรายการ --</option>' + depts.map(d => `<option value="${d}" ${d === s.department ? 'selected' : ''}>${d}</option>`).join('');
+    document.getElementById('staffModal').classList.remove('hidden');
+}
+window.editStaff = editStaff;
+
+function syncDeptInput() {
+    const sel = document.getElementById('sfDeptSelect').value;
+    if (sel) document.getElementById('sfDept').value = sel;
+}
+window.syncDeptInput = syncDeptInput;
+
+function saveStaff() {
+    const name = document.getElementById('sfName').value.trim();
+    const dept = document.getElementById('sfDept').value.trim() || document.getElementById('sfDeptSelect').value;
+    const position = document.getElementById('sfPosition').value;
+    const adminRole = document.getElementById('sfAdminRole').value;
+    const errEl = document.getElementById('staffModalError');
+
+    if (!name) { errEl.textContent = 'กรุณาระบุชื่อ-นามสกุล'; errEl.classList.remove('hidden'); return; }
+    if (!dept) { errEl.textContent = 'กรุณาระบุกลุ่มสาระ/ฝ่าย'; errEl.classList.remove('hidden'); return; }
+
+    const list = loadStaffList();
+
+    if (staffEditIndex === null) {
+        // Add — check duplicate
+        if (list.some(s => s.name === name)) {
+            errEl.textContent = `มีชื่อ "${name}" อยู่แล้วในระบบ`; errEl.classList.remove('hidden'); return;
+        }
+        list.push({ name, department: dept, position, admin_role: adminRole });
+    } else {
+        // Edit
+        list[staffEditIndex] = { name, department: dept, position, admin_role: adminRole };
+    }
+
+    saveStaffList(list);
+    closeStaffModal();
+    renderStaffTable();
+    initStaffUI();
+}
+window.saveStaff = saveStaff;
+
+function deleteStaff(idx) {
+    const list = loadStaffList();
+    if (!confirm(`ลบ "${list[idx]?.name}" ออกจากระบบ?`)) return;
+    list.splice(idx, 1);
+    saveStaffList(list);
+    renderStaffTable();
+    initStaffUI();
+}
+window.deleteStaff = deleteStaff;
+
+function closeStaffModal() {
+    document.getElementById('staffModal').classList.add('hidden');
+}
+window.closeStaffModal = closeStaffModal;
+document.getElementById('staffModal').addEventListener('click', e => { if (e.target === document.getElementById('staffModal')) closeStaffModal(); });
+
+function exportStaffJson() {
+    const list = loadStaffList();
+    const blob = new Blob([JSON.stringify(list, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'ppk_staff.json';
+    a.click();
+}
+window.exportStaffJson = exportStaffJson;
+
+function resetStaffToDefault() {
+    if (!confirm(`รีเซ็ตกลับเป็นฐานข้อมูลเริ่มต้น (${STAFF_LIST.length} คน)?\nข้อมูลที่แก้ไขจะหายหมด`)) return;
+    localStorage.removeItem(STAFF_STORAGE_KEY);
+    renderStaffTable();
+    initStaffUI();
+}
+window.resetStaffToDefault = resetStaffToDefault;
+
+// init staff tab when clicked
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    if (btn.dataset.tab === 'staff') {
+        btn.addEventListener('click', renderStaffTable);
+    }
+});

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>วิเคราะห์ความเที่ยงธรรม — ภาระงาน ร.ร.พะเยาพิทยาคม</title>
+    <title>ระบบสรุปและกระจายภาระงาน — ร.ร.พะเยาพิทยาคม</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
@@ -28,8 +28,8 @@
     <header class="bg-white shadow-sm border-b no-print">
         <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
             <div>
-                <h1 class="text-2xl font-bold text-gray-800">⚖️ วิเคราะห์ความเที่ยงธรรมในการมอบหมายภาระงาน</h1>
-                <p class="text-sm text-gray-500">โรงเรียนพะเยาพิทยาคม — ตรวจสอบจาก PDF คำสั่งจริง ครบทุกมิติ</p>
+                <h1 class="text-2xl font-bold text-gray-800">📊 ระบบสรุปและกระจายภาระงาน</h1>
+                <p class="text-sm text-gray-500">โรงเรียนพะเยาพิทยาคม — สรุปสถิติและจัดตารางจาก PDF คำสั่งจริง</p>
             </div>
             <div class="flex items-center gap-4">
                 <div id="staffCount" class="text-right text-sm text-gray-400"></div>
@@ -136,6 +136,7 @@
                     <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="dept">🏫 กลุ่มสาระ</button>
                     <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="workgroup">🗂️ ฝ่ายงาน</button>
                     <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="scheduler">📅 จัดตาราง</button>
+                    <button class="tab-btn px-4 py-3 text-sm text-gray-500 whitespace-nowrap" data-tab="staff">👥 จัดการบุคลากร</button>
                 </div>
 
                 <!-- Tab: Table -->
@@ -234,6 +235,35 @@
                 <!-- Tab: Workgroup -->
                 <div id="tab-workgroup" class="tab-content p-4 hidden">
                     <div id="workgroupStats"></div>
+                </div>
+
+                <!-- Tab: Staff Management -->
+                <div id="tab-staff" class="tab-content p-4 hidden">
+                    <div class="flex flex-wrap gap-3 mb-4 items-center">
+                        <h3 class="text-lg font-bold flex-1">👥 จัดการฐานข้อมูลบุคลากร</h3>
+                        <span id="staffCountBadge" class="text-sm text-gray-500"></span>
+                        <button onclick="openAddStaffModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">+ เพิ่มบุคลากร</button>
+                        <button onclick="exportStaffJson()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-300">📥 Export JSON</button>
+                        <button onclick="resetStaffToDefault()" class="bg-red-100 text-red-600 px-4 py-2 rounded-lg text-sm hover:bg-red-200">↩ รีเซ็ตค่าเริ่มต้น</button>
+                    </div>
+                    <div class="flex flex-wrap gap-3 mb-4">
+                        <input type="text" id="staffSearch" placeholder="🔍 ค้นหาชื่อ..." class="border rounded-lg px-3 py-2 text-sm w-56" oninput="renderStaffTable()">
+                        <select id="staffFilterDept" class="border rounded-lg px-3 py-2 text-sm" onchange="renderStaffTable()"><option value="">ทุกกลุ่มสาระ</option></select>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead><tr class="bg-gray-50 text-left">
+                                <th class="px-2 py-2">#</th>
+                                <th class="px-2 py-2">ชื่อ-นามสกุล</th>
+                                <th class="px-2 py-2">กลุ่มสาระ/ฝ่าย</th>
+                                <th class="px-2 py-2">ตำแหน่ง</th>
+                                <th class="px-2 py-2">ตำแหน่งบริหาร</th>
+                                <th class="px-2 py-2 text-center">จัดการ</th>
+                            </tr></thead>
+                            <tbody id="staffTable"></tbody>
+                        </table>
+                    </div>
+                    <div id="staffTableInfo" class="text-sm text-gray-400 mt-3"></div>
                 </div>
 
                 <!-- Tab: Scheduler -->
@@ -401,8 +431,60 @@
         </div>
     </main>
 
+    <!-- Add/Edit Staff Modal -->
+    <div id="staffModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="staffModalTitle" class="text-lg font-bold">เพิ่มบุคลากร</h3>
+                <button onclick="closeStaffModal()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">ชื่อ-นามสกุล *</label>
+                    <input type="text" id="sfName" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="เช่น นายสมชาย ใจดี">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">กลุ่มสาระ/ฝ่าย *</label>
+                    <div class="flex gap-2">
+                        <select id="sfDeptSelect" class="flex-1 border rounded-lg px-3 py-2 text-sm" onchange="syncDeptInput()">
+                            <option value="">-- เลือกจากรายการ --</option>
+                        </select>
+                        <input type="text" id="sfDept" class="flex-1 border rounded-lg px-3 py-2 text-sm" placeholder="หรือพิมพ์ใหม่">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">ตำแหน่ง</label>
+                    <select id="sfPosition" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        <option value="ครู">ครู</option>
+                        <option value="ครูชำนาญการ">ครูชำนาญการ</option>
+                        <option value="ครูชำนาญการพิเศษ">ครูชำนาญการพิเศษ</option>
+                        <option value="ครูเชี่ยวชาญ">ครูเชี่ยวชาญ</option>
+                        <option value="ผู้อำนวยการ">ผู้อำนวยการ</option>
+                        <option value="รองผู้อำนวยการ">รองผู้อำนวยการ</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">ตำแหน่งบริหาร (ถ้ามี)</label>
+                    <select id="sfAdminRole" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        <option value="">ไม่มี (ครูปฏิบัติการ)</option>
+                        <option value="ผู้อำนวยการ">ผู้อำนวยการ</option>
+                        <option value="รองผู้อำนวยการ">รองผู้อำนวยการ</option>
+                        <option value="หัวหน้ากลุ่มสาระ">หัวหน้ากลุ่มสาระ</option>
+                        <option value="หัวหน้างาน">หัวหน้างาน</option>
+                        <option value="หัวหน้าฝ่าย">หัวหน้าฝ่าย</option>
+                    </select>
+                </div>
+            </div>
+            <div id="staffModalError" class="text-red-500 text-sm mt-2 hidden"></div>
+            <div class="flex gap-3 mt-5">
+                <button onclick="saveStaff()" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700">บันทึก</button>
+                <button onclick="closeStaffModal()" class="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300">ยกเลิก</button>
+            </div>
+        </div>
+    </div>
+
     <footer class="text-center text-sm text-gray-400 py-6 no-print">
-        ระบบวิเคราะห์ความเที่ยงธรรมในการมอบหมายภาระงาน — โรงเรียนพะเยาพิทยาคม
+        ระบบสรุปและกระจายภาระงาน — โรงเรียนพะเยาพิทยาคม
     </footer>
 
     <script type="module" src="./js/app.js"></script>
