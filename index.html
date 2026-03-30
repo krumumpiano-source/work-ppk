@@ -22,6 +22,20 @@
             body { background: white; }
             .shadow-sm { box-shadow: none !important; }
         }
+        .tip { position:relative; display:inline-flex; align-items:center; justify-content:center;
+               width:15px; height:15px; border-radius:50%; background:#cbd5e1; color:#334155;
+               font-size:9px; font-weight:800; cursor:help; line-height:1; vertical-align:middle;
+               margin-left:3px; flex-shrink:0; }
+        .tip::after { content:attr(data-tip); position:absolute; bottom:calc(100% + 7px); left:50%;
+                      transform:translateX(-50%); background:#1e293b; color:#f1f5f9; font-size:12px;
+                      font-weight:400; line-height:1.6; padding:10px 14px; border-radius:8px;
+                      white-space:pre-line; width:270px; pointer-events:none; opacity:0;
+                      transition:opacity .15s; z-index:9999; box-shadow:0 6px 20px rgba(0,0,0,.3); }
+        .tip::before { content:''; position:absolute; bottom:calc(100% + 3px); left:50%;
+                       transform:translateX(-50%); border:5px solid transparent;
+                       border-top-color:#1e293b; pointer-events:none; opacity:0; transition:opacity .15s; }
+        .tip:hover::after,.tip:hover::before { opacity:1; }
+        @media(max-width:640px){ .tip::after { width:210px; font-size:11px; left:auto; right:0; transform:none; } .tip::before { left:auto; right:10px; transform:none; } }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -65,31 +79,71 @@
         <section id="resultsSection" class="hidden fade-in">
             <!-- Fairness Banner -->
             <div id="fairnessBanner" class="mb-6 bg-white rounded-xl shadow-sm p-6">
-                <h3 class="text-lg font-bold mb-4">⚖️ ดัชนีความเที่ยงธรรมภาพรวม</h3>
+                <h3 class="text-lg font-bold mb-4">⚖️ ดัชนีความเที่ยงธรรมภาพรวม <span class="tip" data-tip="คำนวณจากคำสั่งทุกอันที่อัปโหลดเข้ามา
+เปรียบเทียบการแจกงานระหว่างครูทุกคน
+(ยกเว้นคนที่ตั้งค่า 'ยกเว้นจากสถิติ' ไว้)">?</span></h3>
                 <div class="flex flex-wrap items-center gap-6">
                     <div class="text-center min-w-[140px]">
                         <div id="fairnessScoreValue" class="text-5xl font-bold">—</div>
                         <div id="fairnessGrade" class="text-sm font-semibold mt-1">—</div>
-                        <div class="text-xs text-gray-400 mt-1">100 = เท่าเทียมสมบูรณ์</div>
+                            <div class="text-xs text-gray-400 mt-1">100 = เท่าเทียมสมบูรณ์ <span class="tip" data-tip="สูตร: (1 − Gini) × 100
+
+≥ 85 → A เท่าเทียมดีมาก
+≥ 70 → B ค่อนข้างเท่าเทียม
+≥ 55 → C ไม่ค่อยเท่าเทียม
+≥ 40 → D ไม่เท่าเทียม
+&lt; 40 → F ไม่เท่าเทียมอย่างมาก">?</span></div>
                     </div>
                     <div class="flex-1 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                         <div class="bg-gray-50 rounded-lg p-3 text-center">
-                            <div class="text-xs text-gray-400">Gini Coefficient</div>
+                            <div class="text-xs text-gray-400">Gini Coefficient <span class="tip" data-tip="วัดความไม่เสมอภาคของการแจกงาน
+สูตร: เรียงครั้งทุกคนจากน้อย→มาก
+แล้วคำนวณพื้นที่ระหว่าง
+เส้นตรง (เท่าเทียม) กับเส้นจริง
+
+0.0 = ทุกคนได้งานเท่ากันเป๊ะ
+1.0 = คนเดียวได้ทั้งหมด
+
+ดีกว่า SD ตรงที่บอกว่า
+การแจก 'ยุติธรรม' ไหม">?</span></div>
                             <div id="giniValue" class="text-lg font-bold text-gray-700">—</div>
                             <div class="text-xs text-gray-400">0=เท่าเทียม 1=ไม่เท่าเทียม</div>
                         </div>
                         <div class="bg-gray-50 rounded-lg p-3 text-center">
-                            <div class="text-xs text-gray-400">ส่วนเบี่ยงเบนมาตรฐาน (SD)</div>
+                            <div class="text-xs text-gray-400">ส่วนเบี่ยงเบนมาตรฐาน (SD) <span class="tip" data-tip="วัดว่าจำนวนครั้งของแต่ละคน
+ห่างจากค่าเฉลี่ยมากแค่ไหน
+สูตร: √(ผลรวม(x−เฉลี่ย)² ÷ n)
+
+ตัวอย่าง: เฉลี่ย 12.5, SD 7.84
+= คนส่วนใหญ่อยู่ที่ 4.7–20.3 ครั้ง
+
+ข้อจำกัด: SD สูงอาจเพราะคนหนึ่ง
+ได้มาก ไม่ได้แปลว่าไม่ยุติธรรม
+ใช้ Gini ประกอบเสมอ">?</span></div>
                             <div id="sdValue" class="text-lg font-bold text-gray-700">—</div>
                             <div class="text-xs text-gray-400">ยิ่งสูง=กระจายไม่เท่ากัน</div>
                         </div>
                         <div class="bg-gray-50 rounded-lg p-3 text-center">
-                            <div class="text-xs text-gray-400">อัตราการมีส่วนร่วม</div>
+                            <div class="text-xs text-gray-400">อัตราการมีส่วนร่วม <span class="tip" data-tip="% ของครูทั้งหมดที่ได้รับงาน
+อย่างน้อย 1 ครั้ง
+สูตร: คนที่มีงาน ÷ ครูทั้งหมด × 100
+
+ถ้า &lt; 80% แนะนำตรวจสอบ
+ว่า PDF อ่านชื่อได้ครบหรือเปล่า
+อาจมีชื่อที่อ่านไม่ออก">?</span></div>
                             <div id="participationRate" class="text-lg font-bold text-gray-700">—</div>
                             <div class="text-xs text-gray-400">% คนที่ได้รับมอบหมาย</div>
                         </div>
                         <div class="bg-gray-50 rounded-lg p-3 text-center">
-                            <div class="text-xs text-gray-400">คนรับภาระมากเกิน</div>
+                            <div class="text-xs text-gray-400">คนรับภาระมากเกิน <span class="tip" data-tip="นับคนที่ได้งานมากกว่า
+1.5 เท่าของค่าเฉลี่ย
+สูตร: จำนวนครั้ง &gt; เฉลี่ย × 1.5
+
+ตัวอย่าง: เฉลี่ย 12.5 ครั้ง
+'มากเกิน' = ได้มากกว่า 18.75 ครั้ง
+
+กลุ่มนี้คือเป้าหมายหลัก
+ที่ควรลดภาระในปีถัดไป">?</span></div>
                             <div id="overworkedCount" class="text-lg font-bold text-red-600">—</div>
                             <div class="text-xs text-gray-400">&gt;1.5x ค่าเฉลี่ย</div>
                         </div>
@@ -113,15 +167,39 @@
                 </div>
                 <div class="bg-white rounded-xl shadow-sm p-4 text-center">
                     <div class="text-3xl font-bold text-purple-600" id="statMax">0</div>
-                    <div class="text-sm text-gray-500">สูงสุด (ครั้ง)</div>
+                    <div class="text-sm text-gray-500">สูงสุด (ครั้ง) <span class="tip" data-tip="จำนวนครั้งที่ถูกมอบหมายงาน
+มากที่สุดในบรรดาครูทั้งหมด
+(นับเป็นครั้ง ไม่ใช่คะแนน)
+
+ถ้าสูงกว่าเฉลี่ยมากเกิน 3 เท่า
+ควรตรวจสอบว่า parser อ่านชื่อซ้ำไหม">?</span></div>
                 </div>
                 <div class="bg-white rounded-xl shadow-sm p-4 text-center">
                     <div class="text-3xl font-bold text-orange-600" id="statAvg">0</div>
-                    <div class="text-sm text-gray-500">เฉลี่ย (ครั้ง)</div>
+                    <div class="text-sm text-gray-500">เฉลี่ย (ครั้ง) <span class="tip" data-tip="ค่าเฉลี่ยจำนวนครั้งที่ได้รับงานต่อคน
+สูตร: รวมครั้งทั้งหมด ÷ จำนวนครู
+(เฉพาะคนที่ไม่ได้ถูกยกเว้น)
+
+ใช้เป็นฐานเปรียบเทียบ:
+&gt; 1.5× เฉลี่ย = มากเกิน
+&lt; 0.5× เฉลี่ย = น้อยเกิน">?</span></div>
                 </div>
                 <div class="bg-white rounded-xl shadow-sm p-4 text-center">
                     <div class="text-3xl font-bold text-teal-600" id="statMaxFatigue">0</div>
-                    <div class="text-sm text-gray-500">ดัชนีล้าสูงสุด</div>
+                    <div class="text-sm text-gray-500">ดัชนีล้าสูงสุด <span class="tip" data-tip="Fatigue Index (0–100)
+คำนวณจาก 4 ปัจจัย:
+
+① ภาระสะสม (30 คะแนน)
+   คะแนนถ่วงน้ำหนัก ÷ 15 × 30
+② จำนวนครั้ง (25 คะแนน)
+   ครั้ง ÷ 8 × 25
+③ งานกระจุกตัว (25 คะแนน)
+   งานหลายชิ้นใน 3 วัน = 1 cluster
+④ วันพักน้อยสุด (20 คะแนน)
+   0 วัน=20, ≤2 วัน=15, ≤7 วัน=10
+
+คนได้ 10 ครั้งในเดือนเดียว
+เหนื่อยกว่า 20 ครั้งตลอดปี">?</span></div>
                 </div>
             </div>
 
@@ -165,10 +243,36 @@
                                 <th class="px-2 py-2">#</th>
                                 <th class="px-2 py-2">ชื่อ-นามสกุล</th>
                                 <th class="px-2 py-2">กลุ่มสาระ</th>
-                                <th class="px-2 py-2 text-center">ครั้ง</th>
-                                <th class="px-2 py-2 text-center">คะแนน</th>
-                                <th class="px-2 py-2 text-center">ดัชนีล้า</th>
-                                <th class="px-2 py-2 text-center">ฝ่ายงาน</th>
+                                <th class="px-2 py-2 text-center">ครั้ง <span class="tip" data-tip="จำนวนครั้งที่ปรากฏในคำสั่ง
+นับจากชื่อที่ parser อ่านออกมา
+1 คำสั่ง = อาจมีหลายครั้ง
+ถ้าทำหลายหน้าที่ในงานเดียว">?</span></th>
+                                <th class="px-2 py-2 text-center">คะแนน <span class="tip" data-tip="คะแนนถ่วงน้ำหนัก (Weighted Score)
+สูตร: W_งาน × W_บทบาท × W_ชั่วโมง
+
+W_งาน: คุมสอบ=3.0, ตรวจ=2.5
+  รับมอบตัว=2.0, ประชุม=1.0
+W_บทบาท: ประธาน=1.5, เลขา=1.4
+  กรรมการ=1.0
+W_ชั่วโมง: ชม. ÷ 3 (ถ้าไม่มีข้อมูล=1)
+
+สะท้อนภาระจริงดีกว่าแค่นับครั้ง">?</span></th>
+                                <th class="px-2 py-2 text-center">ดัชนีล้า <span class="tip" data-tip="Fatigue Index (0–100)
+ยิ่งสูง = เหนื่อยกว่า
+
+คำนวณจาก 4 ปัจจัย:
+① ภาระสะสม (30 คะแนน)
+② จำนวนครั้ง (25 คะแนน)
+③ งานกระจุกตัว (25 คะแนน)
+④ วันพักน้อยสุด (20 คะแนน)
+
+ดูรายละเอียดในแท็บ เหนื่อยล้า">?</span></th>
+                                <th class="px-2 py-2 text-center">ฝ่ายงาน <span class="tip" data-tip="จำนวนประเภทงานที่รับผิดชอบ
+จำแนกจากเนื้อหาคำสั่ง:
+วิชาการ / กิจการนักเรียน
+บริหารทั่วไป / งบประมาณ
+
+ยิ่งหลายฝ่าย = ถูกใช้หลายด้าน">?</span></th>
                                 <th class="px-2 py-2 no-print"></th>
                             </tr></thead>
                             <tbody id="summaryTable"></tbody>
