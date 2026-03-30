@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: ppk-workload
-    runtime: docker
-    plan: free
-    autoDeploy: true
-    envVars:
-      - key: PYTHONIOENCODING
-        value: utf-8
