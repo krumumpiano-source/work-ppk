@@ -168,27 +168,40 @@ btnUpload.addEventListener('click', async () => {
             department: info.department,
             position: info.position,
             admin_role: info.admin_role,
+            exclude_from_stats: !!info.exclude_from_stats,
             assignment_count: (personAssignments[name] || []).length,
             assignments: personAssignments[name] || [],
             unique_orders: [...new Set((personAssignments[name] || []).map(a => a.order_number).filter(Boolean))],
         }));
 
-        // --- Step 3: Analyze fairness ---
+        // --- Step 3: Analyze fairness (exclude flagged staff) ---
         progressBar.style.width = '85%';
         progressText.textContent = 'กำลังวิเคราะห์ความเที่ยงธรรม...';
 
-        const analysisResult = analyzeWorkloadFairness(summaryList);
+        const activeList = summaryList.filter(s => !s.exclude_from_stats);
+        const analysisResult = analyzeWorkloadFairness(activeList);
 
-        const assigned = summaryList.filter(s => s.assignment_count > 0);
-        const counts = summaryList.map(s => s.assignment_count);
-        const avgAssign = Math.round(counts.reduce((s, x) => s + x, 0) / Math.max(summaryList.length, 1) * 10) / 10;
+        const assigned = activeList.filter(s => s.assignment_count > 0);
+        const counts = activeList.map(s => s.assignment_count);
+        const avgAssign = Math.round(counts.reduce((s, x) => s + x, 0) / Math.max(activeList.length, 1) * 10) / 10;
+
+        // merge excluded back into summary (marked) for display
+        const excludedSummary = summaryList.filter(s => s.exclude_from_stats).map(s => ({
+            ...s, total_weighted_score: 0, fatigue_index: 0,
+            work_groups: {}, work_group_count: 0, timeline: {},
+        }));
+        const fullSummary = [
+            ...analysisResult.summary.sort((a, b) => (b.total_weighted_score || 0) - (a.total_weighted_score || 0)),
+            ...excludedSummary,
+        ];
 
         analysisData = {
-            summary: analysisResult.summary.sort((a, b) => (b.total_weighted_score || 0) - (a.total_weighted_score || 0)),
-            total_staff: summaryList.length,
+            summary: fullSummary,
+            total_staff: activeList.length,
+            excluded_count: excludedSummary.length,
             total_assigned: assigned.length,
-            total_never_assigned: summaryList.length - assigned.length,
-            never_assigned: summaryList.filter(s => s.assignment_count === 0),
+            total_never_assigned: activeList.length - assigned.length,
+            never_assigned: activeList.filter(s => s.assignment_count === 0),
             dept_stats: analysisResult.dept_fairness,
             fairness: analysisResult.fairness,
             work_group_distribution: analysisResult.work_group_distribution,
@@ -266,6 +279,9 @@ function renderAllResults() {
     document.getElementById('statFiles').textContent = uploadResults.filter(r => r.success).length;
     document.getElementById('statAssigned').textContent = analysisData.total_assigned;
     document.getElementById('statNever').textContent = analysisData.total_never_assigned;
+    // show excluded note
+    const exNote = document.getElementById('excludedNote');
+    if (exNote) { exNote.textContent = analysisData.excluded_count > 0 ? `(ยกเว้น ${analysisData.excluded_count} คนจากสถิติ)` : ''; }
     document.getElementById('statMax').textContent = analysisData.max_assignments;
     document.getElementById('statAvg').textContent = analysisData.avg_assignments;
     const maxFatigue = Math.max(...allSummary.map(s => s.fatigue_index || 0), 0);
@@ -312,16 +328,17 @@ function renderTable() {
     const tbody = document.getElementById('summaryTable');
     tbody.innerHTML = data.map((s, i) => {
         const badges = [];
-        if (isAdmin(s)) badges.push(`<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">${s.admin_role}</span>`);
-        if (s.assignment_count > avg * 1.5) badges.push('<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700">ภาระมากเกิน</span>');
-        if (s.assignment_count === 0) badges.push('<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">ไม่เคยได้รับ</span>');
+        if (s.exclude_from_stats) badges.push('<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">ยกเว้นจากสถิติ</span>');
+        else if (isAdmin(s)) badges.push(`<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">${s.admin_role}</span>`);
+        if (!s.exclude_from_stats && s.assignment_count > avg * 1.5) badges.push('<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700">ภาระมากเกิน</span>');
+        if (!s.exclude_from_stats && s.assignment_count === 0) badges.push('<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">ไม่เคยได้รับ</span>');
 
         const ws = s.total_weighted_score || 0;
         const wsBar = maxWs > 0 ? (ws / maxWs * 100) : 0;
         const fatigue = s.fatigue_index || 0;
         const wgList = s.work_groups ? Object.keys(s.work_groups).join(', ') : '-';
 
-        return `<tr class="border-b hover:bg-blue-50 cursor-pointer" onclick="showPerson('${s.name.replace(/'/g, "\\'")}')">
+        return `<tr class="border-b ${s.exclude_from_stats ? 'bg-slate-50 opacity-60' : 'hover:bg-blue-50'} cursor-pointer" onclick="showPerson('${s.name.replace(/'/g, "\\'")}')">
             <td class="px-2 py-2 text-gray-400">${i+1}</td>
             <td class="px-2 py-2"><div class="font-medium">${s.name}</div><div class="flex flex-wrap gap-1 mt-0.5">${badges.join('')}</div></td>
             <td class="px-2 py-2 text-gray-600 text-xs">${s.department}</td>
@@ -1031,16 +1048,16 @@ function renderStaffTable() {
     tbody.innerHTML = filtered.map((s, i) => {
         const realIdx = list.indexOf(s);
         const adminBadge = s.admin_role ? `<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">${s.admin_role}</span>` : '';
-        return `<tr class="border-b hover:bg-gray-50">
+        const excludeBadge = s.exclude_from_stats ? '<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">ยกเว้นจากสถิติ</span>' : '';
+        const rowBg = s.exclude_from_stats ? 'bg-slate-50 opacity-70' : 'hover:bg-gray-50';
+        return `<tr class="border-b ${rowBg}">
             <td class="px-2 py-2 text-gray-400">${i + 1}</td>
-            <td class="px-2 py-2 font-medium">${s.name}</td>
+            <td class="px-2 py-2 font-medium">${s.name} ${excludeBadge}</td>
             <td class="px-2 py-2 text-sm text-gray-600">${s.department}</td>
             <td class="px-2 py-2 text-sm text-gray-500">${s.position || '-'}</td>
             <td class="px-2 py-2">${adminBadge}</td>
             <td class="px-2 py-2 text-center">
-                <button onclick="editStaff(${realIdx})" class="text-blue-500 hover:text-blue-700 text-xs mr-2">✏️ แก้ไข</button>
-                <button onclick="deleteStaff(${realIdx})" class="text-red-400 hover:text-red-600 text-xs">🗑️ ลบ</button>
-            </td>
+                <button onclick="toggleExclude(${realIdx})" class="text-xs mr-2 ${s.exclude_from_stats ? 'text-green-600 hover:text-green-800' : 'text-slate-400 hover:text-slate-600'}" title="${s.exclude_from_stats ? 'รวมในสถิติ' : 'ยกเว้นจากสถิติ'}">${s.exclude_from_stats ? '✓ รวมอีกครั้ง' : '✕ ยกเว้น'}</button>
         </tr>`;
     }).join('');
 
@@ -1057,6 +1074,7 @@ function openAddStaffModal() {
     document.getElementById('sfDept').value = '';
     document.getElementById('sfPosition').value = 'ครู';
     document.getElementById('sfAdminRole').value = '';
+    document.getElementById('sfExcludeStats').checked = false;
     document.getElementById('staffModalError').classList.add('hidden');
 
     // populate dept select
@@ -1078,6 +1096,7 @@ function editStaff(idx) {
     document.getElementById('sfDept').value = s.department;
     document.getElementById('sfPosition').value = s.position || 'ครู';
     document.getElementById('sfAdminRole').value = s.admin_role || '';
+    document.getElementById('sfExcludeStats').checked = !!s.exclude_from_stats;
     document.getElementById('staffModalError').classList.add('hidden');
 
     const depts = getCurrentDepartments();
@@ -1097,6 +1116,7 @@ function saveStaff() {
     const dept = document.getElementById('sfDept').value.trim() || document.getElementById('sfDeptSelect').value;
     const position = document.getElementById('sfPosition').value;
     const adminRole = document.getElementById('sfAdminRole').value;
+    const excludeFromStats = document.getElementById('sfExcludeStats').checked;
     const errEl = document.getElementById('staffModalError');
 
     if (!name) { errEl.textContent = 'กรุณาระบุชื่อ-นามสกุล'; errEl.classList.remove('hidden'); return; }
@@ -1109,10 +1129,10 @@ function saveStaff() {
         if (list.some(s => s.name === name)) {
             errEl.textContent = `มีชื่อ "${name}" อยู่แล้วในระบบ`; errEl.classList.remove('hidden'); return;
         }
-        list.push({ name, department: dept, position, admin_role: adminRole });
+        list.push({ name, department: dept, position, admin_role: adminRole, exclude_from_stats: excludeFromStats });
     } else {
         // Edit
-        list[staffEditIndex] = { name, department: dept, position, admin_role: adminRole };
+        list[staffEditIndex] = { name, department: dept, position, admin_role: adminRole, exclude_from_stats: excludeFromStats };
     }
 
     saveStaffList(list);
@@ -1131,6 +1151,16 @@ function deleteStaff(idx) {
     initStaffUI();
 }
 window.deleteStaff = deleteStaff;
+
+function toggleExclude(idx) {
+    const list = loadStaffList();
+    if (!list[idx]) return;
+    list[idx].exclude_from_stats = !list[idx].exclude_from_stats;
+    saveStaffList(list);
+    renderStaffTable();
+    initStaffUI();
+}
+window.toggleExclude = toggleExclude;
 
 function closeStaffModal() {
     document.getElementById('staffModal').classList.add('hidden');

@@ -105,7 +105,7 @@
                 </div>
                 <div class="bg-white rounded-xl shadow-sm p-4 text-center">
                     <div class="text-3xl font-bold text-green-600" id="statAssigned">0</div>
-                    <div class="text-sm text-gray-500">คนได้รับมอบหมาย</div>
+                    <div class="text-sm text-gray-500">คนได้รับมอบหมาย <span id="excludedNote" class="text-xs text-slate-400"></span></div>
                 </div>
                 <div class="bg-white rounded-xl shadow-sm p-4 text-center">
                     <div class="text-3xl font-bold text-red-600" id="statNever">0</div>
@@ -258,7 +258,7 @@
                                 <th class="px-2 py-2">กลุ่มสาระ/ฝ่าย</th>
                                 <th class="px-2 py-2">ตำแหน่ง</th>
                                 <th class="px-2 py-2">ตำแหน่งบริหาร</th>
-                                <th class="px-2 py-2 text-center">จัดการ</th>
+                                <th class="px-2 py-2 text-center">ยกเว้นสถิติ / จัดการ</th>
                             </tr></thead>
                             <tbody id="staffTable"></tbody>
                         </table>
@@ -474,6 +474,13 @@
                         <option value="หัวหน้าฝ่าย">หัวหน้าฝ่าย</option>
                     </select>
                 </div>
+            </div>
+            <div class="flex items-start gap-3 mt-3 p-3 bg-slate-50 rounded-lg border">
+                <input type="checkbox" id="sfExcludeStats" class="mt-0.5 w-4 h-4 rounded accent-slate-500">
+                <label for="sfExcludeStats" class="text-sm text-gray-600 cursor-pointer">
+                    <span class="font-semibold text-gray-700">ยกเว้นจากสถิติ</span> — ปรากฏในคำสั่งตามตำแหน่ง ไม่ใช่ภาระงานจริง
+                    <span class="block text-xs text-gray-400 mt-0.5">ยังแสดงในตาราง แต่ไม่นับใน Gini / ค่าเฉลี่ย / รายชื่อไม่มีงาน</span>
+                </label>
             </div>
             <div id="staffModalError" class="text-red-500 text-sm mt-2 hidden"></div>
             <div class="flex gap-3 mt-5">
